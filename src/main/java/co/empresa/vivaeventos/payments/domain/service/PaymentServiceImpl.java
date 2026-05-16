@@ -64,7 +64,7 @@ public class PaymentServiceImpl implements IPaymentService {
 
             Payment payment = Payment.builder()
                     .orderId(request.getOrderId())
-                    .userId(userId != null ? userId : request.getUserId() != null ? request.getUserId().toString() : null)
+                    .userId(userId != null ? UUID.fromString(userId) : (request.getUserId() != null ? UUID.fromString(request.getUserId().toString()) : null))
                     .userEmail(userEmail)
                     .providerReference(paymentIntent.getId())
                     .amount(request.getAmount())

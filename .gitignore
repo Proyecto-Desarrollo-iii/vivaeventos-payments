@@ -23,3 +23,6 @@ buildNumber.properties
 # OS
 .DS_Store
 Thumbs.db
+
+# Stripe CLI
+stripe-cli/

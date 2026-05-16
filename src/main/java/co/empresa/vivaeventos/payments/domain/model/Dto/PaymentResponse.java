@@ -18,7 +18,7 @@ public class PaymentResponse {
 
     private UUID id;
     private UUID orderId;
-    private String userId;
+    private UUID userId;
     private String userEmail;
     private String providerReference;
     private String paymentProvider;

@@ -26,7 +26,7 @@ public class Payment {
     private UUID orderId;
 
     @Column(name = "user_id")
-    private String userId;
+    private UUID userId;
 
     @Column(name = "user_email")
     private String userEmail;

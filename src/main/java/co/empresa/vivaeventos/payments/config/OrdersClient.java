@@ -17,11 +17,14 @@ public class OrdersClient {
 
     private final RestTemplate restTemplate;
     private final String ordersBaseUrl;
+    private final String jwtSecret;
 
     public OrdersClient(
-            @Value("${services.orders.url:http://localhost:8082}") String ordersBaseUrl) {
+            @Value("${services.orders.url:http://localhost:8083}") String ordersBaseUrl,
+            @Value("${jwt.secret}") String jwtSecret) {
         this.restTemplate = new RestTemplate();
         this.ordersBaseUrl = ordersBaseUrl;
+        this.jwtSecret = jwtSecret;
     }
 
     public void updateOrderStatus(UUID orderId, String status) {
@@ -29,6 +32,7 @@ public class OrdersClient {
             String url = ordersBaseUrl + "/api/v1/orders/{id}/status?status=" + status;
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Bearer " + jwtSecret);
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
             restTemplate.exchange(url, HttpMethod.PATCH, request, Void.class, orderId);
@@ -43,6 +47,7 @@ public class OrdersClient {
         try {
             String url = ordersBaseUrl + "/api/v1/orders/{id}/cancel";
             HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + jwtSecret);
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
             restTemplate.postForEntity(url, request, Void.class, orderId);

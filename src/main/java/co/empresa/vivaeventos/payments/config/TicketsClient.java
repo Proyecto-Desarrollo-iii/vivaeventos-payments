@@ -18,11 +18,14 @@ public class TicketsClient {
 
     private final RestTemplate restTemplate;
     private final String ticketsBaseUrl;
+    private final String jwtSecret;
 
     public TicketsClient(
-            @Value("${services.tickets.url:http://localhost:8085}") String ticketsBaseUrl) {
+            @Value("${services.tickets.url:http://localhost:8085}") String ticketsBaseUrl,
+            @Value("${jwt.secret}") String jwtSecret) {
         this.restTemplate = new RestTemplate();
         this.ticketsBaseUrl = ticketsBaseUrl;
+        this.jwtSecret = jwtSecret;
     }
 
     public void releaseTicketsByOrder(UUID orderId) {
@@ -30,6 +33,7 @@ public class TicketsClient {
             String url = ticketsBaseUrl + "/api/v1/issued-tickets/release-by-order/{orderId}";
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Bearer " + jwtSecret);
 
             Map<String, String> body = new HashMap<>();
             body.put("reason", "Payment failed or timeout");
