@@ -16,11 +16,10 @@ import java.util.UUID;
 @AllArgsConstructor
 public class CreatePaymentRequest {
 
-    @NotNull(message = "Order ID is required")
+@NotNull(message = "Order ID is required")
     private UUID orderId;
 
-    @NotNull(message = "User ID is required")
-    private UUID userId;
+    private String userId;
 
     @NotNull(message = "Amount is required")
     @Positive(message = "Amount must be positive")

@@ -18,7 +18,8 @@ public class PaymentResponse {
 
     private UUID id;
     private UUID orderId;
-    private UUID userId;
+    private String userId;
+    private String userEmail;
     private String providerReference;
     private String paymentProvider;
     private BigDecimal amount;
@@ -42,6 +43,7 @@ public class PaymentResponse {
                 .id(payment.getId())
                 .orderId(payment.getOrderId())
                 .userId(payment.getUserId())
+                .userEmail(payment.getUserEmail())
                 .providerReference(payment.getProviderReference())
                 .paymentProvider(payment.getPaymentProvider())
                 .amount(payment.getAmount())

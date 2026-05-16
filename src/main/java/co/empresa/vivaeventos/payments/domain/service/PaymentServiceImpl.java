@@ -31,10 +31,10 @@ public class PaymentServiceImpl implements IPaymentService {
     private final OrdersClient ordersClient;
     private final TicketsClient ticketsClient;
 
-    @Override
+@Override
     @Transactional
-    public PaymentResponse createPaymentIntent(CreatePaymentRequest request) {
-        log.info("Creating payment intent for order: {}", request.getOrderId());
+    public PaymentResponse createPaymentIntent(CreatePaymentRequest request, String userId, String userEmail) {
+        log.info("Creating payment intent for order: {} by user: {}", request.getOrderId(), userId);
 
         if (paymentRepository.existsByOrderIdAndStatusIn(
                 request.getOrderId(),
@@ -50,11 +50,11 @@ public class PaymentServiceImpl implements IPaymentService {
                 .setAmount(request.getAmount().multiply(java.math.BigDecimal.valueOf(100)).longValue())
                 .setCurrency(currency.toLowerCase())
                 .putMetadata("order_id", request.getOrderId().toString())
-                .putMetadata("user_id", request.getUserId().toString())
+                .putMetadata("user_id", userId != null ? userId : "")
                 .setAutomaticPaymentMethods(
                         PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
                                 .setEnabled(true)
-                                .build()
+                        .build()
                 );
 
         PaymentIntentCreateParams params = paramsBuilder.build();
@@ -64,7 +64,8 @@ public class PaymentServiceImpl implements IPaymentService {
 
             Payment payment = Payment.builder()
                     .orderId(request.getOrderId())
-                    .userId(request.getUserId())
+                    .userId(userId != null ? userId : request.getUserId() != null ? request.getUserId().toString() : null)
+                    .userEmail(userEmail)
                     .providerReference(paymentIntent.getId())
                     .amount(request.getAmount())
                     .currency(currency)

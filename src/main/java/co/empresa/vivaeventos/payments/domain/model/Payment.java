@@ -25,8 +25,11 @@ public class Payment {
     @Column(name = "order_id", nullable = false)
     private UUID orderId;
 
-    @Column(name = "user_id", nullable = false)
-    private UUID userId;
+    @Column(name = "user_id")
+    private String userId;
+
+    @Column(name = "user_email")
+    private String userEmail;
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal amount;
