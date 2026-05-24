@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface IPaymentService {
 
-    PaymentResponse createPaymentIntent(CreatePaymentRequest request, String userId, String userEmail);
+    PaymentResponse createPaymentIntent(CreatePaymentRequest request, String idempotencyKey, String userId, String userEmail);
 
     PaymentResponse getPaymentById(UUID id);
 
@@ -19,6 +19,6 @@ public interface IPaymentService {
 
     PaymentResponse handleWebhook(WebhookPayload payload);
 
-PaymentResponse processRefund(UUID paymentId, RefundRequest request);
+    PaymentResponse processRefund(UUID paymentId, String idempotencyKey, RefundRequest request);
 
 }

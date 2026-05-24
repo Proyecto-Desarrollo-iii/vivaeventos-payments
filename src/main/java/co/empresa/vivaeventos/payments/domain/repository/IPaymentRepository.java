@@ -1,7 +1,9 @@
 package co.empresa.vivaeventos.payments.domain.repository;
 
 import co.empresa.vivaeventos.payments.domain.model.Payment;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -17,6 +19,16 @@ public interface IPaymentRepository extends JpaRepository<Payment, UUID> {
     Optional<Payment> findByProviderReference(String providerReference);
 
     Optional<Payment> findByOrderId(UUID orderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.orderId = :orderId")
+    Optional<Payment> findByOrderIdWithLock(@Param("orderId") UUID orderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.id = :id")
+    Optional<Payment> findByIdWithLock(@Param("id") UUID id);
+
+    Optional<Payment> findByIdempotencyKey(String idempotencyKey);
 
     boolean existsByOrderIdAndStatusIn(UUID orderId, Payment.PaymentStatus... statuses);
 

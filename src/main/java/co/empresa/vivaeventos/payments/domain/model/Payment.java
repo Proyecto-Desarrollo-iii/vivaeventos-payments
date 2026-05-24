@@ -11,7 +11,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "payments")
+@Table(name = "payments", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_payments_idempotency_key", columnNames = "idempotency_key"),
+    @UniqueConstraint(name = "uk_payments_refund_idempotency_key", columnNames = "refund_idempotency_key")
+})
 @Data
 @Builder
 @NoArgsConstructor
@@ -24,6 +27,13 @@ public class Payment {
 
     @Column(name = "order_id", nullable = false)
     private UUID orderId;
+
+    @Column(name = "idempotency_key", length = 255)
+    private String idempotencyKey;
+
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     @Column(name = "user_id")
     private UUID userId;
@@ -72,6 +82,9 @@ public class Payment {
 
     @Column(name = "refund_id", length = 255)
     private String refundId;
+
+    @Column(name = "refund_idempotency_key", length = 255)
+    private String refundIdempotencyKey;
 
     @PrePersist
     protected void onCreate() {

@@ -4,6 +4,7 @@ import co.empresa.vivaeventos.payments.config.OrdersClient;
 import co.empresa.vivaeventos.payments.config.TicketsClient;
 import co.empresa.vivaeventos.payments.domain.model.Payment;
 import co.empresa.vivaeventos.payments.domain.repository.IPaymentRepository;
+import co.empresa.vivaeventos.payments.domain.repository.IWebhookEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,11 +22,15 @@ import java.util.List;
 public class PaymentTimeoutService {
 
     private final IPaymentRepository paymentRepository;
+    private final IWebhookEventRepository webhookEventRepository;
     private final OrdersClient ordersClient;
     private final TicketsClient ticketsClient;
 
     @Value("${payment.timeout.minutes:15}")
     private int timeoutMinutes;
+
+    @Value("${payment.webhook.cleanup.days:90}")
+    private int webhookCleanupDays;
 
     @Scheduled(fixedRateString = "${payment.timeout.check.interval.ms:60000}")
     @Transactional
@@ -68,5 +73,16 @@ public class PaymentTimeoutService {
         } catch (Exception e) {
             log.error("Failed to release tickets for order {}: {}", payment.getOrderId(), e.getMessage());
         }
+    }
+
+    @Scheduled(cron = "${payment.webhook.cleanup.cron:0 0 3 * * ?}")
+    @Transactional
+    public void cleanupOldWebhookEvents() {
+        log.debug("Cleaning up webhook events older than {} days", webhookCleanupDays);
+
+        Instant cutoffTime = Instant.now().minus(webhookCleanupDays, ChronoUnit.DAYS);
+        webhookEventRepository.deleteByCreatedAtBefore(cutoffTime);
+
+        log.info("Cleaned up webhook events older than {} days", webhookCleanupDays);
     }
 }

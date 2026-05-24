@@ -34,6 +34,7 @@ public class PaymentController {
     @PostMapping
     public ResponseEntity<PaymentResponse> createPaymentIntent(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody CreatePaymentRequest request) {
 
         Optional<Claims> claimsOpt = validateAndExtractJwt(authHeader);
@@ -47,10 +48,10 @@ public class PaymentController {
         
         String userId = userIdFromJwt != null ? userIdFromJwt : request.getUserId();
 
-        log.info("Payment request from user: {} ({}) for order: {}", userId, userEmail, request.getOrderId());
+        log.info("Payment request from user: {} ({}) for order: {}, idempotencyKey: {}", userId, userEmail, request.getOrderId(), idempotencyKey);
         
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(paymentService.createPaymentIntent(request, userId, userEmail));
+                .body(paymentService.createPaymentIntent(request, idempotencyKey, userId, userEmail));
     }
 
     @GetMapping("/{id}")
@@ -95,6 +96,7 @@ public class PaymentController {
     @PostMapping("/{id}/refund")
     public ResponseEntity<PaymentResponse> refundPayment(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @PathVariable UUID id,
             @Valid @RequestBody RefundRequest request) {
 
@@ -103,7 +105,7 @@ public class PaymentController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        return ResponseEntity.ok(paymentService.processRefund(id, request));
+        return ResponseEntity.ok(paymentService.processRefund(id, idempotencyKey, request));
     }
 
     @PostMapping("/webhook")

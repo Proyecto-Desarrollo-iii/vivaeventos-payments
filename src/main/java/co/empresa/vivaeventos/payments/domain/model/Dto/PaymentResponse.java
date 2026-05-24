@@ -31,7 +31,9 @@ public class PaymentResponse {
     private Instant createdAt;
     private Instant updatedAt;
     private Instant processedAt;
+    private String idempotencyKey;
     private String refundId;
+    private String refundIdempotencyKey;
     private String clientSecret;
 
     public static PaymentResponse fromEntity(Payment payment) {
@@ -55,7 +57,9 @@ public class PaymentResponse {
                 .createdAt(payment.getCreatedAt())
                 .updatedAt(payment.getUpdatedAt())
                 .processedAt(payment.getProcessedAt())
+                .idempotencyKey(payment.getIdempotencyKey())
                 .refundId(payment.getRefundId())
+                .refundIdempotencyKey(payment.getRefundIdempotencyKey())
                 .clientSecret(clientSecret)
                 .build();
     }

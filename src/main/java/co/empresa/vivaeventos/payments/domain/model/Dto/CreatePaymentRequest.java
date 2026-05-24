@@ -16,7 +16,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class CreatePaymentRequest {
 
-@NotNull(message = "Order ID is required")
+    @NotNull(message = "Order ID is required")
     private UUID orderId;
 
     private String userId;
