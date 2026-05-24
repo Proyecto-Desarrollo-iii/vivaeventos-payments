@@ -21,4 +21,8 @@ public interface IPaymentService {
 
     PaymentResponse processRefund(UUID paymentId, String idempotencyKey, RefundRequest request);
 
+    PaymentResponse retryPayment(UUID orderId, String userId, String userEmail);
+
+    PaymentResponse cancelPayment(UUID orderId);
+
 }
