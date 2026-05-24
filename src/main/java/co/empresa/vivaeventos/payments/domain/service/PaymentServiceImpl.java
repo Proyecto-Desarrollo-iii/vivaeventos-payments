@@ -15,6 +15,7 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentIntentRetrieveParams;
+import com.stripe.param.PaymentIntentUpdateParams;
 import com.stripe.param.RefundCreateParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,7 +47,6 @@ public class PaymentServiceImpl implements IPaymentService {
         }
         log.info("Creating payment intent for order: {} by user: {}, idempotencyKey: {}", request.getOrderId(), userId, idempotencyKey);
 
-        // Capa 1: Idempotency key externa - si ya existe, retornar el mismo payment
         Optional<Payment> existing = paymentRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
             log.info("Idempotency key already used: {}, returning existing payment: {}", idempotencyKey, existing.get().getId());
@@ -52,11 +54,9 @@ public class PaymentServiceImpl implements IPaymentService {
             return PaymentResponse.fromEntity(existing.get(), clientSecret);
         }
 
-        // Capa 3: Lock pesimista para serializar concurrent access por orderId
         Optional<Payment> existingByOrder = paymentRepository.findByOrderIdWithLock(request.getOrderId());
         if (existingByOrder.isPresent()) {
             Payment existingPayment = existingByOrder.get();
-            // Re-check: otro request pudo haber insertado con esta idempotencyKey mientras esperábamos el lock
             if (existingPayment.getIdempotencyKey() != null && existingPayment.getIdempotencyKey().equals(idempotencyKey)) {
                 log.info("Idempotency key found after acquiring lock: {}, returning existing payment", idempotencyKey);
                 String clientSecret = retrieveClientSecret(existingPayment.getProviderReference());
@@ -64,14 +64,13 @@ public class PaymentServiceImpl implements IPaymentService {
             }
             if (existingPayment.getStatus() == Payment.PaymentStatus.PENDING ||
                 existingPayment.getStatus() == Payment.PaymentStatus.PROCESSING ||
-                existingPayment.getStatus() == Payment.PaymentStatus.APPROVED) {
+                existingPayment.getStatus() == Payment.PaymentStatus.APPROVED ||
+                existingPayment.getStatus() == Payment.PaymentStatus.PAID) {
                 throw new IllegalStateException("Payment already exists for this order");
             }
         }
 
         String currency = request.getCurrency() != null ? request.getCurrency() : "COP";
-
-        // Capa 2: Idempotency key para Stripe
         String stripeIdempotencyKey = "payment_create_" + request.getOrderId() + "_" + idempotencyKey;
 
         PaymentIntentCreateParams.Builder paramsBuilder = PaymentIntentCreateParams.builder()
@@ -111,7 +110,6 @@ public class PaymentServiceImpl implements IPaymentService {
             try {
                 payment = paymentRepository.save(payment);
             } catch (DataIntegrityViolationException e) {
-                // Safety net: otro request insertó con la misma idempotency key
                 Payment existingPayment = paymentRepository.findByIdempotencyKey(idempotencyKey)
                         .orElseThrow(() -> new RuntimeException("Idempotency conflict, but no payment found", e));
                 log.info("Idempotency key conflict resolved, returning existing payment: {}", existingPayment.getId());
@@ -158,9 +156,13 @@ public class PaymentServiceImpl implements IPaymentService {
     @Transactional
     public PaymentResponse confirmPayment(String paymentIntentId) {
         log.info("Confirming payment: {}", paymentIntentId);
-
-        Payment payment = paymentRepository.findByProviderReference(paymentIntentId)
+        Payment payment = paymentRepository.findByProviderReferenceWithLock(paymentIntentId)
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found: " + paymentIntentId));
+
+        if (payment.getStatus() == Payment.PaymentStatus.PAID) {
+            log.info("Payment {} already confirmed as PAID, skipping", paymentIntentId);
+            return PaymentResponse.fromEntity(payment);
+        }
 
         try {
             PaymentIntentRetrieveParams params = PaymentIntentRetrieveParams.builder().build();
@@ -169,29 +171,88 @@ public class PaymentServiceImpl implements IPaymentService {
             Payment.PaymentStatus newStatus = mapStripeStatus(paymentIntent.getStatus());
             payment.setStatus(newStatus);
 
-            if (newStatus == Payment.PaymentStatus.APPROVED) {
+            if (newStatus == Payment.PaymentStatus.PAID && payment.getProcessedAt() == null) {
                 payment.setProcessedAt(Instant.now());
-                try {
-                    ordersClient.updateOrderStatus(payment.getOrderId(), "PAID");
-                } catch (Exception e) {
-                    log.error("Failed to update order status to PAID: {}", e.getMessage());
-                }
+                processSuccessfulPayment(payment, "confirmPayment");
             } else if (newStatus == Payment.PaymentStatus.FAILED) {
                 payment.setFailureReason(paymentIntent.getLastPaymentError() != null
                         ? paymentIntent.getLastPaymentError().getMessage()
                         : "Payment failed");
                 handlePaymentFailure(payment);
+            } else {
+                payment.setStatus(newStatus);
             }
 
             payment = paymentRepository.save(payment);
             log.info("Payment confirmed with status: {}", newStatus);
-
             return PaymentResponse.fromEntity(payment);
 
         } catch (StripeException e) {
             log.error("Failed to confirm payment: {}", e.getMessage());
             throw new RuntimeException("Failed to confirm payment: " + e.getMessage(), e);
         }
+    }
+
+    private void processSuccessfulPayment(Payment payment, String source) {
+        log.info("Processing successful payment for order: {} from {}", payment.getOrderId(), source);
+        try {
+            issueTicketsForOrder(payment.getOrderId(), payment.getUserEmail());
+        } catch (Exception e) {
+            log.error("Failed to issue tickets for order {}: {}", payment.getOrderId(), e.getMessage());
+        }
+        try {
+            ordersClient.updateOrderStatus(payment.getOrderId(), "PAID");
+            log.info("Order {} status updated to PAID", payment.getOrderId());
+        } catch (Exception e) {
+            log.error("Failed to update order status to PAID: {}", e.getMessage());
+        }
+    }
+
+    private void issueTicketsForOrder(UUID orderId, String userEmail) {
+        Map<String, Object> orderData = ordersClient.getOrderById(orderId);
+        if (orderData == null) {
+            log.warn("No order data found for order: {}", orderId);
+            return;
+        }
+        Object itemsObj = orderData.get("items");
+        if (!(itemsObj instanceof List<?> itemsList)) {
+            log.warn("No items found in order: {}", orderId);
+            return;
+        }
+        for (Object itemObj : itemsList) {
+            if (!(itemObj instanceof Map<?, ?> item)) continue;
+
+            String eventId = String.valueOf(item.get("eventId"));
+            String eventName = (String) item.get("eventName");
+            String ticketTypeId = String.valueOf(item.get("ticketTypeId"));
+            String ticketTypeName = (String) item.get("ticketTypeName");
+            Object quantityObj = item.get("quantity");
+            Object unitPriceObj = item.get("unitPrice");
+            String holderName = item.get("holderName") instanceof String hn ? hn : userEmail;
+            String holderEmail = item.get("holderEmail") instanceof String he ? he : userEmail;
+
+            int quantity = (quantityObj instanceof Number n) ? n.intValue() : 1;
+            double unitPrice = (unitPriceObj instanceof Number n) ? n.doubleValue() : 0.0;
+
+            for (int i = 0; i < quantity; i++) {
+                Map<String, Object> ticketRequest = new java.util.HashMap<>();
+                ticketRequest.put("orderId", orderId.toString());
+                ticketRequest.put("eventId", eventId);
+                ticketRequest.put("ticketTypeId", ticketTypeId);
+                ticketRequest.put("ticketType", ticketTypeName);
+                ticketRequest.put("eventName", eventName);
+                ticketRequest.put("holderName", holderName);
+                ticketRequest.put("holderEmail", holderEmail);
+                ticketRequest.put("price", unitPrice);
+
+                try {
+                    ticketsClient.issueTicket(ticketRequest);
+                } catch (Exception e) {
+                    log.error("Failed to issue ticket for order {}: {}", orderId, e.getMessage());
+                }
+            }
+        }
+        log.info("Tickets issued for order: {}", orderId);
     }
 
     private void handlePaymentFailure(Payment payment) {
@@ -213,7 +274,6 @@ public class PaymentServiceImpl implements IPaymentService {
     public PaymentResponse handleWebhook(WebhookPayload payload) {
         log.info("Processing webhook event: {} for payment: {}", payload.getEventType(), payload.getPaymentIntentId());
 
-        // Capa 4: Insert-first approach para evitar race conditions
         WebhookEvent webhookEvent = WebhookEvent.builder()
                 .eventId(payload.getEventId())
                 .paymentIntentId(payload.getPaymentIntentId())
@@ -225,8 +285,7 @@ public class PaymentServiceImpl implements IPaymentService {
             return null;
         }
 
-        Optional<Payment> optionalPayment = paymentRepository.findByProviderReference(payload.getPaymentIntentId());
-
+        Optional<Payment> optionalPayment = paymentRepository.findByProviderReferenceWithLock(payload.getPaymentIntentId());
         if (optionalPayment.isEmpty()) {
             log.warn("Payment not found for webhook: {}", payload.getPaymentIntentId());
             return null;
@@ -234,30 +293,154 @@ public class PaymentServiceImpl implements IPaymentService {
 
         Payment payment = optionalPayment.get();
         Payment.PaymentStatus previousStatus = payment.getStatus();
-        payment.setStatus(mapWebhookStatus(payload.getStatus()));
+        Payment.PaymentStatus newStatus = mapWebhookStatus(payload.getStatus());
+        payment.setStatus(newStatus);
 
-        if (payment.getStatus() == Payment.PaymentStatus.APPROVED && payment.getProcessedAt() == null) {
+        if (newStatus == Payment.PaymentStatus.PAID && payment.getProcessedAt() == null) {
             payment.setProcessedAt(Instant.now());
-            if (previousStatus != Payment.PaymentStatus.APPROVED) {
-                try {
-                    ordersClient.updateOrderStatus(payment.getOrderId(), "PAID");
-                } catch (Exception e) {
-                    log.error("Failed to update order status to PAID: {}", e.getMessage());
-                }
+            if (previousStatus != Payment.PaymentStatus.PAID) {
+                processSuccessfulPayment(payment, "webhook");
             }
         }
 
-        if (payment.getStatus() == Payment.PaymentStatus.FAILED && payload.getFailureReason() != null) {
+        if (newStatus == Payment.PaymentStatus.FAILED && payload.getFailureReason() != null) {
             payment.setFailureReason(payload.getFailureReason());
             if (previousStatus != Payment.PaymentStatus.FAILED) {
                 handlePaymentFailure(payment);
             }
         }
 
+        if (newStatus == Payment.PaymentStatus.CANCELLED && previousStatus != Payment.PaymentStatus.CANCELLED) {
+            try {
+                ordersClient.updateOrderStatus(payment.getOrderId(), "CANCELLED");
+            } catch (Exception e) {
+                log.error("Failed to update order status to CANCELLED: {}", e.getMessage());
+            }
+        }
+
+        payment = paymentRepository.save(payment);
+        log.info("Webhook processed, payment status: {}", payment.getStatus());
+        return PaymentResponse.fromEntity(payment);
+    }
+
+    @Override
+    @Transactional
+    public PaymentResponse retryPayment(UUID orderId, String userId, String userEmail) {
+        log.info("Retrying payment for order: {} by user: {}", orderId, userId);
+
+        Payment payment = paymentRepository.findByOrderIdWithLock(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("No payment found for order: " + orderId));
+
+        if (payment.getStatus() == Payment.PaymentStatus.PAID) {
+            throw new IllegalStateException("Payment already completed, cannot retry");
+        }
+        if (payment.getStatus() == Payment.PaymentStatus.CANCELLED) {
+            throw new IllegalStateException("Payment was cancelled, cannot retry");
+        }
+
+        try {
+            String oldIntentId = payment.getProviderReference();
+            if (oldIntentId != null) {
+                try {
+                    PaymentIntent oldIntent = PaymentIntent.retrieve(oldIntentId);
+                    if (!"canceled".equals(oldIntent.getStatus()) && !"succeeded".equals(oldIntent.getStatus())) {
+                        oldIntent.cancel();
+                        log.info("Cancelled old PaymentIntent: {}", oldIntentId);
+                    }
+                } catch (StripeException e) {
+                    log.warn("Failed to cancel old PaymentIntent {}: {}", oldIntentId, e.getMessage());
+                }
+            }
+
+            String currency = payment.getCurrency() != null ? payment.getCurrency() : "COP";
+            String stripeIdempotencyKey = "payment_retry_" + orderId + "_" + UUID.randomUUID();
+
+            PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                    .setAmount(payment.getAmount().multiply(java.math.BigDecimal.valueOf(100)).longValue())
+                    .setCurrency(currency.toLowerCase())
+                    .putMetadata("order_id", orderId.toString())
+                    .putMetadata("retry", "true")
+                    .putMetadata("user_id", userId != null ? userId : "")
+                    .setAutomaticPaymentMethods(
+                            PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
+                                    .setEnabled(true)
+                            .build()
+                    )
+                    .build();
+
+            RequestOptions requestOptions = RequestOptions.builder()
+                    .setIdempotencyKey(stripeIdempotencyKey)
+                    .build();
+
+            PaymentIntent newPaymentIntent = PaymentIntent.create(params, requestOptions);
+
+            payment.setProviderReference(newPaymentIntent.getId());
+            payment.setStatus(Payment.PaymentStatus.PENDING);
+            payment.setFailureReason(null);
+            payment.setProcessedAt(null);
+            payment.setIdempotencyKey(UUID.randomUUID().toString());
+
+            payment = paymentRepository.save(payment);
+
+            log.info("Retry payment created for order: {}, new PaymentIntent: {}", orderId, newPaymentIntent.getId());
+            return PaymentResponse.fromEntity(payment, newPaymentIntent.getClientSecret());
+
+        } catch (StripeException e) {
+            log.error("Failed to retry payment for order {}: {}", orderId, e.getMessage());
+            throw new RuntimeException("Failed to retry payment: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    @Transactional
+    public PaymentResponse cancelPayment(UUID orderId) {
+        log.info("Cancelling payment for order: {}", orderId);
+
+        Payment payment = paymentRepository.findByOrderIdWithLock(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("No payment found for order: " + orderId));
+
+        if (payment.getStatus() == Payment.PaymentStatus.PAID) {
+            throw new IllegalStateException("Cannot cancel a paid payment");
+        }
+        if (payment.getStatus() == Payment.PaymentStatus.CANCELLED) {
+            throw new IllegalStateException("Payment already cancelled");
+        }
+
+        try {
+            String intentId = payment.getProviderReference();
+            if (intentId != null) {
+                try {
+                    PaymentIntent paymentIntent = PaymentIntent.retrieve(intentId);
+                    if (!"canceled".equals(paymentIntent.getStatus()) && !"succeeded".equals(paymentIntent.getStatus())) {
+                        paymentIntent.cancel();
+                        log.info("Cancelled PaymentIntent: {}", intentId);
+                    }
+                } catch (StripeException e) {
+                    log.warn("Failed to cancel PaymentIntent {}: {}", intentId, e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error cancelling Stripe PaymentIntent: {}", e.getMessage());
+        }
+
+        payment.setStatus(Payment.PaymentStatus.CANCELLED);
         payment = paymentRepository.save(payment);
 
-        log.info("Webhook processed, payment status: {}", payment.getStatus());
+        try {
+            ordersClient.updateOrderStatus(orderId, "CANCELLED");
+            log.info("Order {} status updated to CANCELLED", orderId);
+        } catch (Exception e) {
+            log.error("Failed to update order status to CANCELLED: {}", e.getMessage());
+        }
 
+        try {
+            ticketsClient.releaseTicketsByOrderWithRetry(orderId, 3);
+            log.info("Released tickets for cancelled order: {}", orderId);
+        } catch (Exception e) {
+            log.error("Failed to release tickets for order {}: {}", orderId, e.getMessage());
+        }
+
+        log.info("Payment cancelled for order: {}", orderId);
         return PaymentResponse.fromEntity(payment);
     }
 
@@ -265,7 +448,7 @@ public class PaymentServiceImpl implements IPaymentService {
         return switch (stripeStatus) {
             case "requires_payment_method", "requires_confirmation", "requires_action" -> Payment.PaymentStatus.PROCESSING;
             case "processing" -> Payment.PaymentStatus.PROCESSING;
-            case "succeeded" -> Payment.PaymentStatus.APPROVED;
+            case "succeeded" -> Payment.PaymentStatus.PAID;
             case "canceled" -> Payment.PaymentStatus.CANCELLED;
             default -> Payment.PaymentStatus.PENDING;
         };
@@ -274,7 +457,7 @@ public class PaymentServiceImpl implements IPaymentService {
     private Payment.PaymentStatus mapWebhookStatus(String webhookStatus) {
         if (webhookStatus == null) return Payment.PaymentStatus.PENDING;
         return switch (webhookStatus.toLowerCase()) {
-            case "succeeded" -> Payment.PaymentStatus.APPROVED;
+            case "succeeded" -> Payment.PaymentStatus.PAID;
             case "processing" -> Payment.PaymentStatus.PROCESSING;
             case "requires_payment_method", "requires_confirmation", "requires_action" -> Payment.PaymentStatus.PROCESSING;
             case "canceled" -> Payment.PaymentStatus.CANCELLED;
@@ -291,14 +474,14 @@ public class PaymentServiceImpl implements IPaymentService {
         Payment payment = paymentRepository.findByIdWithLock(paymentId)
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found: " + paymentId));
 
-        // Idempotency: si ya se procesó un refund con esta key, retornar el resultado existente
         if (payment.getRefundIdempotencyKey() != null && payment.getRefundIdempotencyKey().equals(idempotencyKey)) {
             log.info("Refund idempotency key already used: {}, returning existing refund", idempotencyKey);
             return PaymentResponse.fromEntity(payment);
         }
 
-        if (payment.getStatus() != Payment.PaymentStatus.APPROVED) {
-            throw new IllegalStateException("Only approved payments can be refunded");
+        if (payment.getStatus() != Payment.PaymentStatus.APPROVED &&
+            payment.getStatus() != Payment.PaymentStatus.PAID) {
+            throw new IllegalStateException("Only approved/paid payments can be refunded");
         }
 
         try {
@@ -329,7 +512,6 @@ public class PaymentServiceImpl implements IPaymentService {
             try {
                 payment = paymentRepository.save(payment);
             } catch (DataIntegrityViolationException e) {
-                // Safety net: otro request insertó el mismo refundIdempotencyKey
                 Payment existingPayment = paymentRepository.findByIdWithLock(paymentId)
                         .orElseThrow(() -> new RuntimeException("Refund conflict, but no payment found", e));
                 log.info("Refund idempotency key conflict resolved, returning existing payment: {}", existingPayment.getId());

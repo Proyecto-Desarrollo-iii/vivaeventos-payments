@@ -105,6 +105,7 @@ public class Payment {
         FAILED,
         TIMEOUT,
         REFUNDED,
-        CANCELLED
+        CANCELLED,
+        PAID
     }
 }

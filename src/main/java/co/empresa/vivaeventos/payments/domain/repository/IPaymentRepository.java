@@ -28,6 +28,10 @@ public interface IPaymentRepository extends JpaRepository<Payment, UUID> {
     @Query("SELECT p FROM Payment p WHERE p.id = :id")
     Optional<Payment> findByIdWithLock(@Param("id") UUID id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Payment p WHERE p.providerReference = :providerReference")
+    Optional<Payment> findByProviderReferenceWithLock(@Param("providerReference") String providerReference);
+
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);
 
     boolean existsByOrderIdAndStatusIn(UUID orderId, Payment.PaymentStatus... statuses);

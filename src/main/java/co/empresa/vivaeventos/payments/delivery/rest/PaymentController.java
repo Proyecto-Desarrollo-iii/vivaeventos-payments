@@ -108,6 +108,48 @@ public class PaymentController {
         return ResponseEntity.ok(paymentService.processRefund(id, idempotencyKey, request));
     }
 
+    @PostMapping("/order/{orderId}/retry")
+    public ResponseEntity<PaymentResponse> retryPayment(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable UUID orderId) {
+
+        Optional<Claims> claimsOpt = validateAndExtractJwt(authHeader);
+        if (claimsOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        Claims claims = claimsOpt.get();
+        String userId = jwtUtil.extractUserId(claims);
+        String userEmail = jwtUtil.extractEmail(claims);
+
+        try {
+            return ResponseEntity.ok(paymentService.retryPayment(orderId, userId, userEmail));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/order/{orderId}/cancel")
+    public ResponseEntity<PaymentResponse> cancelPayment(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable UUID orderId) {
+
+        Optional<Claims> claimsOpt = validateAndExtractJwt(authHeader);
+        if (claimsOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        try {
+            return ResponseEntity.ok(paymentService.cancelPayment(orderId));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
     @PostMapping("/webhook")
     public ResponseEntity<String> handleWebhook(
             @RequestBody String payload,
