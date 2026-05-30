@@ -1,5 +1,7 @@
 package co.empresa.vivaeventos.payments.domain.service;
 
+import co.empresa.vivaeventos.payments.config.EventsClient;
+import co.empresa.vivaeventos.payments.config.NotificationsClient;
 import co.empresa.vivaeventos.payments.config.OrdersClient;
 import co.empresa.vivaeventos.payments.config.TicketsClient;
 import co.empresa.vivaeventos.payments.domain.model.Dto.CreatePaymentRequest;
@@ -39,6 +41,7 @@ public class PaymentServiceImpl implements IPaymentService {
     private final OrdersClient ordersClient;
     private final TicketsClient ticketsClient;
     private final NotificationsClient notificationsClient;
+    private final EventsClient eventsClient;
 
     @Override
     @Transactional
@@ -196,28 +199,116 @@ public class PaymentServiceImpl implements IPaymentService {
 
     private void processSuccessfulPayment(Payment payment, String source) {
         log.info("Processing successful payment for order: {} from {}", payment.getOrderId(), source);
+
+        // Obtener datos de la orden para placeholders
+        Map<String, Object> orderData = null;
+        try {
+            orderData = ordersClient.getOrderById(payment.getOrderId());
+        } catch (Exception e) {
+            log.warn("Could not fetch order data for placeholders: {}", e.getMessage());
+        }
+
         try {
             issueTicketsForOrder(payment.getOrderId(), payment.getUserEmail(), payment.getUserId());
         } catch (Exception e) {
             log.error("Failed to issue tickets for order {}: {}", payment.getOrderId(), e.getMessage());
         }
+
         try {
             ordersClient.updateOrderStatus(payment.getOrderId(), "PAID");
             log.info("Order {} status updated to PAID", payment.getOrderId());
+        } catch (Exception e) {
+            log.error("Failed to update order status to PAID: {}", e.getMessage());
+        }
 
-            // Notificación de compra exitosa
+        try {
             Map<String, String> placeholders = new java.util.HashMap<>();
-            placeholders.put("orderId", payment.getOrderId().toString().substring(0, 8));
-            
+            placeholders.put("nombre", payment.getUserEmail());
+            placeholders.put("evento", "");
+            placeholders.put("fecha", "");
+            placeholders.put("lugar", "");
+            placeholders.put("cantidad", "0");
+            placeholders.put("total", "0");
+            placeholders.put("codigo_qr", "Disponible en tu perfil");
+
+            if (orderData != null) {
+                Object totalObj = orderData.get("total");
+                if (totalObj instanceof Number totalNum) {
+                    placeholders.put("total", totalNum.toString());
+                }
+                Object itemsObj = orderData.get("items");
+                if (itemsObj instanceof List<?> itemsList && !itemsList.isEmpty()) {
+                    StringBuilder eventNames = new StringBuilder();
+                    int totalQuantity = 0;
+                    UUID firstEventId = null;
+
+                    for (Object itemObj : itemsList) {
+                        if (itemObj instanceof Map<?, ?> item) {
+                            String eventName = (String) item.get("eventName");
+                            String holderName = item.get("holderName") instanceof String hn ? hn : "";
+                            int quantity = item.get("quantity") instanceof Number n ? n.intValue() : 0;
+                            String eventIdStr = item.get("eventId") instanceof String s ? s : null;
+
+                            if (eventName != null) {
+                                eventNames.append(eventNames.length() > 0 ? ", " : "").append(eventName);
+                            }
+                            totalQuantity += quantity;
+
+                            if (!holderName.isEmpty()) {
+                                placeholders.put("nombre", holderName);
+                            }
+
+                            if (firstEventId == null && eventIdStr != null) {
+                                try {
+                                    firstEventId = UUID.fromString(eventIdStr);
+                                } catch (IllegalArgumentException ignored) {}
+                            }
+                        }
+                    }
+                    placeholders.put("evento", eventNames.toString());
+                    placeholders.put("cantidad", String.valueOf(totalQuantity));
+
+                    if (firstEventId != null) {
+                        try {
+                            Map<String, Object> eventData = eventsClient.getEventById(firstEventId);
+                            if (eventData != null && eventData.get("evento") instanceof Map<?, ?> evento) {
+                                String eventDateTime = (String) evento.get("eventDateTime");
+                                if (eventDateTime != null) {
+                                    try {
+                                        java.time.LocalDateTime dt = java.time.LocalDateTime.parse(eventDateTime);
+                                        placeholders.put("fecha", dt.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")));
+                                    } catch (Exception e) {
+                                        placeholders.put("fecha", eventDateTime.substring(0, Math.min(10, eventDateTime.length())));
+                                    }
+                                }
+                                String venueName = (String) evento.get("venueName");
+                                String address = (String) evento.get("address");
+                                StringBuilder lugar = new StringBuilder();
+                                if (venueName != null) lugar.append(venueName);
+                                if (address != null) {
+                                    if (!lugar.isEmpty()) lugar.append(" - ");
+                                    lugar.append(address);
+                                }
+                                if (!lugar.isEmpty()) {
+                                    placeholders.put("lugar", lugar.toString());
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("Could not fetch event details for fecha/lugar: {}", e.getMessage());
+                        }
+                    }
+                }
+            }
+
             notificationsClient.sendNotification(
                 payment.getUserId(), 
                 payment.getUserEmail(),
-                "ORDER_CONFIRMED",
+                "PURCHASE",
                 "EMAIL",
                 placeholders
             );
         } catch (Exception e) {
-            log.error("Failed to update order status to PAID: {}", e.getMessage());
+            log.error("Failed to send purchase notification: {}", e.getMessage());
         }
 
     }
@@ -445,14 +536,18 @@ public class PaymentServiceImpl implements IPaymentService {
             ordersClient.updateOrderStatus(orderId, "CANCELLED");
             log.info("Order {} status updated to CANCELLED", orderId);
             
-            // Notificación de cancelación de orden
+            // Notificación de cancelación de orden — placeholders para CANCELLATION_EMAIL
             Map<String, String> placeholders = new java.util.HashMap<>();
-            placeholders.put("orderId", orderId.toString().substring(0, 8));
-            
+            placeholders.put("nombre", payment.getUserEmail());
+            placeholders.put("evento", "");
+            placeholders.put("fecha", "");
+            placeholders.put("motivo", "Cancelado por el usuario");
+            placeholders.put("total", payment.getAmount() != null ? payment.getAmount().toString() : "0");
+
             notificationsClient.sendNotification(
                 payment.getUserId(), 
                 payment.getUserEmail(),
-                "ORDER_CANCELLED",
+                "CANCELLATION",
                 "EMAIL",
                 placeholders
             );
