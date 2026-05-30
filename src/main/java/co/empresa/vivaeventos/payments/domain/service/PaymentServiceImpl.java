@@ -38,6 +38,7 @@ public class PaymentServiceImpl implements IPaymentService {
     private final IWebhookEventRepository webhookEventRepository;
     private final OrdersClient ordersClient;
     private final TicketsClient ticketsClient;
+    private final NotificationsClient notificationsClient;
 
     @Override
     @Transactional
@@ -196,19 +197,32 @@ public class PaymentServiceImpl implements IPaymentService {
     private void processSuccessfulPayment(Payment payment, String source) {
         log.info("Processing successful payment for order: {} from {}", payment.getOrderId(), source);
         try {
-            issueTicketsForOrder(payment.getOrderId(), payment.getUserEmail());
+            issueTicketsForOrder(payment.getOrderId(), payment.getUserEmail(), payment.getUserId());
         } catch (Exception e) {
             log.error("Failed to issue tickets for order {}: {}", payment.getOrderId(), e.getMessage());
         }
         try {
             ordersClient.updateOrderStatus(payment.getOrderId(), "PAID");
             log.info("Order {} status updated to PAID", payment.getOrderId());
+
+            // Notificación de compra exitosa
+            Map<String, String> placeholders = new java.util.HashMap<>();
+            placeholders.put("orderId", payment.getOrderId().toString().substring(0, 8));
+            
+            notificationsClient.sendNotification(
+                payment.getUserId(), 
+                payment.getUserEmail(),
+                "ORDER_CONFIRMED",
+                "EMAIL",
+                placeholders
+            );
         } catch (Exception e) {
             log.error("Failed to update order status to PAID: {}", e.getMessage());
         }
+
     }
 
-    private void issueTicketsForOrder(UUID orderId, String userEmail) {
+    private void issueTicketsForOrder(UUID orderId, String userEmail, UUID userId) {
         Map<String, Object> orderData = ordersClient.getOrderById(orderId);
         if (orderData == null) {
             log.warn("No order data found for order: {}", orderId);
@@ -244,6 +258,7 @@ public class PaymentServiceImpl implements IPaymentService {
                 ticketRequest.put("holderName", holderName);
                 ticketRequest.put("holderEmail", holderEmail);
                 ticketRequest.put("price", unitPrice);
+                ticketRequest.put("userId", userId != null ? userId.toString() : "");
 
                 try {
                     ticketsClient.issueTicket(ticketRequest);
@@ -429,9 +444,22 @@ public class PaymentServiceImpl implements IPaymentService {
         try {
             ordersClient.updateOrderStatus(orderId, "CANCELLED");
             log.info("Order {} status updated to CANCELLED", orderId);
+            
+            // Notificación de cancelación de orden
+            Map<String, String> placeholders = new java.util.HashMap<>();
+            placeholders.put("orderId", orderId.toString().substring(0, 8));
+            
+            notificationsClient.sendNotification(
+                payment.getUserId(), 
+                payment.getUserEmail(),
+                "ORDER_CANCELLED",
+                "EMAIL",
+                placeholders
+            );
         } catch (Exception e) {
             log.error("Failed to update order status to CANCELLED: {}", e.getMessage());
         }
+
 
         try {
             ticketsClient.releaseTicketsByOrderWithRetry(orderId, 3);
