@@ -347,7 +347,7 @@ class PaymentServiceImplTest {
                 .build();
 
         when(webhookEventRepository.save(any(WebhookEvent.class))).thenAnswer(i -> i.getArgument(0));
-        when(paymentRepository.findByProviderReference("pi_test_123"))
+        when(paymentRepository.findByProviderReferenceWithLock("pi_test_123"))
                 .thenReturn(Optional.of(pendingPayment));
 
         when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
@@ -355,7 +355,7 @@ class PaymentServiceImplTest {
         PaymentResponse response = paymentService.handleWebhook(payload);
 
         assertThat(response).isNotNull();
-        assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.APPROVED);
+        assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.PAID);
         verify(ordersClient).updateOrderStatus(orderId, "PAID");
     }
 
@@ -371,7 +371,7 @@ class PaymentServiceImplTest {
                 .build();
 
         when(webhookEventRepository.save(any(WebhookEvent.class))).thenAnswer(i -> i.getArgument(0));
-        when(paymentRepository.findByProviderReference("pi_test_fail"))
+        when(paymentRepository.findByProviderReferenceWithLock("pi_test_fail"))
                 .thenReturn(Optional.of(pendingPayment));
 
         when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
@@ -396,7 +396,7 @@ class PaymentServiceImplTest {
                 .build();
 
         when(webhookEventRepository.save(any(WebhookEvent.class))).thenAnswer(i -> i.getArgument(0));
-        when(paymentRepository.findByProviderReference("pi_not_found"))
+        when(paymentRepository.findByProviderReferenceWithLock("pi_not_found"))
                 .thenReturn(Optional.empty());
 
         PaymentResponse response = paymentService.handleWebhook(payload);
@@ -477,7 +477,7 @@ class PaymentServiceImplTest {
         assertThatThrownBy(() -> paymentService.processRefund(
                 pendingPayment.getId(), refundKey, request))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Only approved payments can be refunded");
+                .hasMessageContaining("Only approved/paid payments can be refunded");
     }
 
     @Test
