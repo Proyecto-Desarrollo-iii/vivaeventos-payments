@@ -9,8 +9,10 @@ import co.empresa.vivaeventos.payments.domain.model.Dto.PaymentResponse;
 import co.empresa.vivaeventos.payments.domain.model.Dto.RefundRequest;
 import co.empresa.vivaeventos.payments.domain.model.Dto.WebhookPayload;
 import co.empresa.vivaeventos.payments.domain.model.Payment;
+import co.empresa.vivaeventos.payments.domain.model.Promotion;
 import co.empresa.vivaeventos.payments.domain.model.WebhookEvent;
 import co.empresa.vivaeventos.payments.domain.repository.IPaymentRepository;
+import co.empresa.vivaeventos.payments.domain.repository.IPromotionRepository;
 import co.empresa.vivaeventos.payments.domain.repository.IWebhookEventRepository;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -42,6 +44,7 @@ public class PaymentServiceImpl implements IPaymentService {
     private final TicketsClient ticketsClient;
     private final NotificationsClient notificationsClient;
     private final EventsClient eventsClient;
+    private final IPromotionRepository promotionRepository;
 
     @Override
     @Transactional
@@ -309,6 +312,72 @@ public class PaymentServiceImpl implements IPaymentService {
             );
         } catch (Exception e) {
             log.error("Failed to send purchase notification: {}", e.getMessage());
+        }
+
+        // Promocion por cantidad de boletas
+        if (orderData != null) {
+            try {
+                Object itemsObj = orderData.get("items");
+                int totalTickets = 0;
+                String eventName = "";
+                if (itemsObj instanceof List<?> itemsList) {
+                    for (Object itemObj : itemsList) {
+                        if (itemObj instanceof Map<?, ?> item) {
+                            int qty = item.get("quantity") instanceof Number n ? n.intValue() : 0;
+                            totalTickets += qty;
+                            if (eventName.isEmpty() && item.get("eventName") instanceof String en) {
+                                eventName = en;
+                            }
+                        }
+                    }
+                }
+
+                if (totalTickets >= 4) {
+                    String code = "PROMO-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+                    String discount = "15% de descuento";
+                    Instant expiresAt = Instant.now().plus(java.time.Duration.ofDays(30));
+
+                    Promotion promotion = Promotion.builder()
+                            .userId(payment.getUserId())
+                            .code(code)
+                            .discount(discount)
+                            .eventName(eventName)
+                            .expiresAt(expiresAt)
+                            .build();
+                    promotionRepository.save(promotion);
+
+                    String holderName = payment.getUserEmail();
+                    if (payment.getUserEmail() != null) {
+                        Object itemsObj2 = orderData.get("items");
+                        if (itemsObj2 instanceof List<?> itemsList2 && !itemsList2.isEmpty()) {
+                            Object first = itemsList2.get(0);
+                            if (first instanceof Map<?, ?> item) {
+                                String hn = item.get("holderName") instanceof String s ? s : null;
+                                if (hn != null && !hn.isBlank()) holderName = hn;
+                            }
+                        }
+                    }
+
+                    Map<String, String> promoPlaceholders = new java.util.HashMap<>();
+                    promoPlaceholders.put("nombre", holderName);
+                    promoPlaceholders.put("evento", eventName);
+                    promoPlaceholders.put("descuento", discount);
+                    promoPlaceholders.put("codigo_promocion", code);
+                    promoPlaceholders.put("fecha_expiracion", java.time.LocalDateTime.now().plusDays(30).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+
+                    notificationsClient.sendNotification(
+                        payment.getUserId(),
+                        payment.getUserEmail(),
+                        "PROMOTION",
+                        "EMAIL",
+                        promoPlaceholders
+                    );
+
+                    log.info("Promotion {} created for user {} ({} tickets)", code, payment.getUserId(), totalTickets);
+                }
+            } catch (Exception e) {
+                log.error("Failed to send promotion notification: {}", e.getMessage());
+            }
         }
 
     }

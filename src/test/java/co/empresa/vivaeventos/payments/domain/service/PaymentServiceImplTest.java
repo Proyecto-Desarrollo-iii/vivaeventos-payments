@@ -11,6 +11,7 @@ import co.empresa.vivaeventos.payments.domain.model.Dto.WebhookPayload;
 import co.empresa.vivaeventos.payments.domain.model.Payment;
 import co.empresa.vivaeventos.payments.domain.model.WebhookEvent;
 import co.empresa.vivaeventos.payments.domain.repository.IPaymentRepository;
+import co.empresa.vivaeventos.payments.domain.repository.IPromotionRepository;
 import co.empresa.vivaeventos.payments.domain.repository.IWebhookEventRepository;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -57,6 +58,9 @@ class PaymentServiceImplTest {
     @Mock
     private EventsClient eventsClient;
 
+    @Mock
+    private IPromotionRepository promotionRepository;
+
     private PaymentServiceImpl paymentService;
 
     private CreatePaymentRequest validRequest;
@@ -75,7 +79,7 @@ class PaymentServiceImplTest {
     @BeforeEach
     void setUp() {
         paymentService = new PaymentServiceImpl(
-                paymentRepository, webhookEventRepository, ordersClient, ticketsClient, notificationsClient, eventsClient);
+                paymentRepository, webhookEventRepository, ordersClient, ticketsClient, notificationsClient, eventsClient, promotionRepository);
 
         orderId = UUID.randomUUID();
         paymentId = UUID.randomUUID();
