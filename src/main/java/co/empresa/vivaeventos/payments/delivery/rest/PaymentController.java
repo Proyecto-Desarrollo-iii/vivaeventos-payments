@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -132,7 +133,7 @@ public class PaymentController {
     }
 
     @PostMapping("/order/{orderId}/cancel")
-    public ResponseEntity<PaymentResponse> cancelPayment(
+    public ResponseEntity<?> cancelPayment(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
             @PathVariable UUID orderId) {
 
@@ -144,9 +145,17 @@ public class PaymentController {
         try {
             return ResponseEntity.ok(paymentService.cancelPayment(orderId));
         } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            log.warn("Cannot cancel payment for order {}: {}", orderId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
+            log.warn("Payment not found for order {}: {}", orderId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Error cancelling payment for order {}: {}", orderId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Error interno al cancelar la orden"));
         }
     }
 
