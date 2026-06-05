@@ -111,3 +111,31 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-to-cloud-run:
+    needs: docker-build-and-push
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/834797281102/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: cloud-run-admin@vivaeventos-498516.iam.gserviceaccount.com
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: vivaeventos-payments
+          image: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          region: us-central1
+          env_vars: |
+            SERVER_PORT=8080
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            DB_URL=jdbc:postgresql://${{ secrets.DB_HOST }}:5432/vivaeventos_payments?sslmode=require
+            DB_USER=${{ secrets.DB_USER }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            STRIPE_API_KEY=${{ secrets.STRIPE_API_KEY }}
+            STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            ORDERS_SERVICE_URL=${{ secrets.ORDERS_SERVICE_URL }}
+            TICKETS_SERVICE_URL=${{ secrets.TICKETS_SERVICE_URL }}
