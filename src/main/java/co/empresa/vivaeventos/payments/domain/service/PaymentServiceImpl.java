@@ -574,18 +574,31 @@ public class PaymentServiceImpl implements IPaymentService {
         Payment payment = paymentRepository.findByOrderIdWithLock(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("No payment found for order: " + orderId));
 
+        log.info("Current payment status: {}, providerReference: {}", payment.getStatus(), payment.getProviderReference());
+
         if (payment.getStatus() == Payment.PaymentStatus.PAID) {
             throw new IllegalStateException("Cannot cancel a paid payment");
         }
         if (payment.getStatus() == Payment.PaymentStatus.CANCELLED) {
             throw new IllegalStateException("Payment already cancelled");
         }
+        if (payment.getStatus() == Payment.PaymentStatus.REFUNDED) {
+            throw new IllegalStateException("Cannot cancel a refunded payment");
+        }
 
+        // Guardar como CANCELLED inmediatamente (versión fresca por el lock)
+        payment.setStatus(Payment.PaymentStatus.CANCELLED);
+        log.info("Saving payment with status CANCELLED for order: {}", orderId);
+        payment = paymentRepository.save(payment);
+        log.info("Payment saved successfully for order: {}", orderId);
+
+        // Stripe cancel (best-effort, no afecta el estado del pago si falla)
         try {
             String intentId = payment.getProviderReference();
             if (intentId != null) {
                 try {
                     PaymentIntent paymentIntent = PaymentIntent.retrieve(intentId);
+                    log.info("Stripe PaymentIntent {} status: {}", intentId, paymentIntent.getStatus());
                     if (!"canceled".equals(paymentIntent.getStatus()) && !"succeeded".equals(paymentIntent.getStatus())) {
                         paymentIntent.cancel();
                         log.info("Cancelled PaymentIntent: {}", intentId);
@@ -598,14 +611,11 @@ public class PaymentServiceImpl implements IPaymentService {
             log.warn("Error cancelling Stripe PaymentIntent: {}", e.getMessage());
         }
 
-        payment.setStatus(Payment.PaymentStatus.CANCELLED);
-        payment = paymentRepository.save(payment);
-
+        // Actualizar orden (best-effort)
         try {
             ordersClient.updateOrderStatus(orderId, "CANCELLED");
             log.info("Order {} status updated to CANCELLED", orderId);
-            
-            // Notificación de cancelación de orden — placeholders para CANCELLATION_EMAIL
+
             Map<String, String> placeholders = new java.util.HashMap<>();
             placeholders.put("nombre", payment.getUserEmail());
             placeholders.put("evento", "");
@@ -624,7 +634,7 @@ public class PaymentServiceImpl implements IPaymentService {
             log.error("Failed to update order status to CANCELLED: {}", e.getMessage());
         }
 
-
+        // Liberar tickets (best-effort)
         try {
             ticketsClient.releaseTicketsByOrderWithRetry(orderId, 3);
             log.info("Released tickets for cancelled order: {}", orderId);
