@@ -646,6 +646,86 @@ class PaymentServiceImplTest {
     }
 
     @Test
+    void cancelPaymentNoProviderReferenceSkipsStripe() {
+        Payment payment = setupCancelMocks(createCancelPayment(Payment.PaymentStatus.PENDING, null));
+
+        PaymentResponse response = paymentService.cancelPayment(payment.getOrderId());
+
+        assertCancelled(response, payment.getOrderId());
+    }
+
+    @Test
+    void cancelPaymentStripeStatusCanceledDoesNotCallCancel() throws StripeException {
+        Payment payment = setupCancelMocks(createCancelPayment(Payment.PaymentStatus.PENDING, PI_CANCEL_REF));
+        PaymentIntent mockPi = mock(PaymentIntent.class);
+        when(mockPi.getStatus()).thenReturn("canceled");
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF)).thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.cancelPayment(payment.getOrderId());
+
+            assertCancelled(response, payment.getOrderId());
+            verify(mockPi, never()).cancel();
+        }
+    }
+
+    @Test
+    void cancelPaymentStripeStatusSucceededDoesNotCallCancel() throws StripeException {
+        Payment payment = setupCancelMocks(createCancelPayment(Payment.PaymentStatus.PENDING, PI_CANCEL_REF));
+        PaymentIntent mockPi = mock(PaymentIntent.class);
+        when(mockPi.getStatus()).thenReturn("succeeded");
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF)).thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.cancelPayment(payment.getOrderId());
+
+            assertCancelled(response, payment.getOrderId());
+            verify(mockPi, never()).cancel();
+        }
+    }
+
+    @Test
+    void cancelPaymentNullAmountStillSavesCancelled() {
+        Payment payment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(UUID.randomUUID())
+                .amount(null)
+                .status(Payment.PaymentStatus.PENDING)
+                .providerReference(PI_CANCEL_REF)
+                .userEmail(TEST_EMAIL)
+                .build();
+        setupCancelMocks(payment);
+        PaymentIntent mockPi = mock(PaymentIntent.class);
+        when(mockPi.getStatus()).thenReturn(STRIPE_REQUIRES_PM);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF)).thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.cancelPayment(payment.getOrderId());
+
+            assertCancelled(response, payment.getOrderId());
+        }
+    }
+
+    @Test
+    void cancelPaymentNonStripeExceptionCatchesOuterBlock() throws StripeException {
+        Payment payment = setupCancelMocks(createCancelPayment(Payment.PaymentStatus.PENDING, PI_CANCEL_REF));
+        PaymentIntent mockPi = mock(PaymentIntent.class);
+        when(mockPi.getStatus()).thenReturn(STRIPE_REQUIRES_PM);
+        doThrow(new RuntimeException("Unexpected non-Stripe error")).when(mockPi).cancel();
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF)).thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.cancelPayment(payment.getOrderId());
+
+            assertCancelled(response, payment.getOrderId());
+        }
+    }
+
+    @Test
     void processRefund_stripeException_throwsRuntimeException() throws StripeException {
         String refundKey = "refund-key-fail";
         UUID payId = UUID.randomUUID();
