@@ -72,6 +72,10 @@ class PaymentServiceImplTest {
     private UUID orderId;
     private UUID paymentId;
     private String idempotencyKey;
+    private static final String TEST_EMAIL = "user@test.com";
+    private static final String PI_CANCEL_REF = "pi_test_cancel";
+    private static final String STATUS_CANCELLED = "CANCELLED";
+
     private String userId;
     private String userEmail;
     private String clientSecret;
@@ -85,7 +89,7 @@ class PaymentServiceImplTest {
         paymentId = UUID.randomUUID();
         idempotencyKey = "test-idempotency-key-001";
         userId = UUID.randomUUID().toString();
-        userEmail = "user@test.com";
+        userEmail = TEST_EMAIL;
         clientSecret = "pi_secret_test";
 
         validRequest = CreatePaymentRequest.builder()
@@ -527,17 +531,21 @@ class PaymentServiceImplTest {
         }
     }
 
+    private Payment createCancelPayment(Payment.PaymentStatus status, String providerRef) {
+        return Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(UUID.randomUUID())
+                .amount(BigDecimal.valueOf(50000))
+                .status(status)
+                .providerReference(providerRef)
+                .userEmail(TEST_EMAIL)
+                .build();
+    }
+
     @Test
     void cancelPaymentSuccessSavesStatusCancelledFirst() {
-        UUID cancelOrderId = UUID.randomUUID();
-        Payment payment = Payment.builder()
-                .id(UUID.randomUUID())
-                .orderId(cancelOrderId)
-                .amount(BigDecimal.valueOf(50000))
-                .status(Payment.PaymentStatus.PENDING)
-                .providerReference("pi_test_cancel")
-                .userEmail("user@test.com")
-                .build();
+        Payment payment = createCancelPayment(Payment.PaymentStatus.PENDING, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
 
         when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
@@ -545,7 +553,7 @@ class PaymentServiceImplTest {
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
             PaymentIntent mockPi = mock(PaymentIntent.class);
             when(mockPi.getStatus()).thenReturn("requires_payment_method");
-            piStatic.when(() -> PaymentIntent.retrieve("pi_test_cancel")).thenReturn(mockPi);
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF)).thenReturn(mockPi);
 
             PaymentResponse response = paymentService.cancelPayment(cancelOrderId);
 
@@ -553,20 +561,16 @@ class PaymentServiceImplTest {
             assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.CANCELLED);
 
             verify(paymentRepository, times(1)).save(any(Payment.class));
-            verify(ordersClient).updateOrderStatus(cancelOrderId, "CANCELLED");
+            verify(ordersClient).updateOrderStatus(cancelOrderId, STATUS_CANCELLED);
+            verify(notificationsClient).sendNotification(any(), eq(TEST_EMAIL), eq("CANCELLATION"), eq("EMAIL"), any());
             verify(ticketsClient).releaseTicketsByOrderWithRetry(cancelOrderId, 3);
         }
     }
 
     @Test
     void cancelPaymentPaidPaymentThrowsException() {
-        UUID cancelOrderId = UUID.randomUUID();
-        Payment payment = Payment.builder()
-                .id(UUID.randomUUID())
-                .orderId(cancelOrderId)
-                .amount(BigDecimal.valueOf(50000))
-                .status(Payment.PaymentStatus.PAID)
-                .build();
+        Payment payment = createCancelPayment(Payment.PaymentStatus.PAID, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
 
         when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
 
@@ -577,13 +581,8 @@ class PaymentServiceImplTest {
 
     @Test
     void cancelPaymentAlreadyCancelledThrowsException() {
-        UUID cancelOrderId = UUID.randomUUID();
-        Payment payment = Payment.builder()
-                .id(UUID.randomUUID())
-                .orderId(cancelOrderId)
-                .amount(BigDecimal.valueOf(50000))
-                .status(Payment.PaymentStatus.CANCELLED)
-                .build();
+        Payment payment = createCancelPayment(Payment.PaymentStatus.CANCELLED, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
 
         when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
 
@@ -594,13 +593,8 @@ class PaymentServiceImplTest {
 
     @Test
     void cancelPaymentRefundedPaymentThrowsException() {
-        UUID cancelOrderId = UUID.randomUUID();
-        Payment payment = Payment.builder()
-                .id(UUID.randomUUID())
-                .orderId(cancelOrderId)
-                .amount(BigDecimal.valueOf(50000))
-                .status(Payment.PaymentStatus.REFUNDED)
-                .build();
+        Payment payment = createCancelPayment(Payment.PaymentStatus.REFUNDED, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
 
         when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
 
@@ -621,21 +615,14 @@ class PaymentServiceImplTest {
 
     @Test
     void cancelPaymentStripeFailsStillSavesCancelled() {
-        UUID cancelOrderId = UUID.randomUUID();
-        Payment payment = Payment.builder()
-                .id(UUID.randomUUID())
-                .orderId(cancelOrderId)
-                .amount(BigDecimal.valueOf(50000))
-                .status(Payment.PaymentStatus.PENDING)
-                .providerReference("pi_test_cancel")
-                .userEmail("user@test.com")
-                .build();
+        Payment payment = createCancelPayment(Payment.PaymentStatus.PENDING, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
 
         when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
 
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
-            piStatic.when(() -> PaymentIntent.retrieve("pi_test_cancel"))
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF))
                     .thenThrow(mock(StripeException.class));
 
             PaymentResponse response = paymentService.cancelPayment(cancelOrderId);
@@ -643,39 +630,32 @@ class PaymentServiceImplTest {
             assertThat(response).isNotNull();
             assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.CANCELLED);
             verify(paymentRepository, times(1)).save(any(Payment.class));
-            verify(ordersClient).updateOrderStatus(cancelOrderId, "CANCELLED");
+            verify(ordersClient).updateOrderStatus(cancelOrderId, STATUS_CANCELLED);
             verify(ticketsClient).releaseTicketsByOrderWithRetry(cancelOrderId, 3);
         }
     }
 
     @Test
     void cancelPaymentOrdersFailsStillSavesCancelled() {
-        UUID cancelOrderId = UUID.randomUUID();
-        Payment payment = Payment.builder()
-                .id(UUID.randomUUID())
-                .orderId(cancelOrderId)
-                .amount(BigDecimal.valueOf(50000))
-                .status(Payment.PaymentStatus.PENDING)
-                .providerReference("pi_test_cancel")
-                .userEmail("user@test.com")
-                .build();
+        Payment payment = createCancelPayment(Payment.PaymentStatus.PENDING, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
 
         when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
         doThrow(new RuntimeException("Order service down"))
-                .when(ordersClient).updateOrderStatus(cancelOrderId, "CANCELLED");
+                .when(ordersClient).updateOrderStatus(cancelOrderId, STATUS_CANCELLED);
 
         try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
             PaymentIntent mockPi = mock(PaymentIntent.class);
             when(mockPi.getStatus()).thenReturn("requires_payment_method");
-            piStatic.when(() -> PaymentIntent.retrieve("pi_test_cancel")).thenReturn(mockPi);
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF)).thenReturn(mockPi);
 
             PaymentResponse response = paymentService.cancelPayment(cancelOrderId);
 
             assertThat(response).isNotNull();
             assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.CANCELLED);
             verify(paymentRepository, times(1)).save(any(Payment.class));
-            verify(ordersClient).updateOrderStatus(cancelOrderId, "CANCELLED");
+            verify(ordersClient).updateOrderStatus(cancelOrderId, STATUS_CANCELLED);
             verify(ticketsClient).releaseTicketsByOrderWithRetry(cancelOrderId, 3);
         }
     }
@@ -706,6 +686,52 @@ class PaymentServiceImplTest {
                     payId, refundKey, request))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Failed to process refund");
+        }
+    }
+
+    @Test
+    void cancelPaymentTimeoutStatusIsCancellable() {
+        Payment payment = createCancelPayment(Payment.PaymentStatus.TIMEOUT, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
+
+        when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF))
+                    .thenThrow(mock(StripeException.class));
+
+            PaymentResponse response = paymentService.cancelPayment(cancelOrderId);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.CANCELLED);
+            verify(paymentRepository, times(1)).save(any(Payment.class));
+            verify(ordersClient).updateOrderStatus(cancelOrderId, STATUS_CANCELLED);
+        }
+    }
+
+    @Test
+    void cancelPaymentTicketsFailsStillReturnsSuccess() {
+        Payment payment = createCancelPayment(Payment.PaymentStatus.PENDING, PI_CANCEL_REF);
+        UUID cancelOrderId = payment.getOrderId();
+
+        when(paymentRepository.findByOrderIdWithLock(cancelOrderId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
+        doThrow(new RuntimeException("Tickets service down"))
+                .when(ticketsClient).releaseTicketsByOrderWithRetry(cancelOrderId, 3);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getStatus()).thenReturn("requires_payment_method");
+            piStatic.when(() -> PaymentIntent.retrieve(PI_CANCEL_REF)).thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.cancelPayment(cancelOrderId);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.CANCELLED);
+            verify(paymentRepository, times(1)).save(any(Payment.class));
+            verify(ordersClient).updateOrderStatus(cancelOrderId, STATUS_CANCELLED);
+            verify(ticketsClient).releaseTicketsByOrderWithRetry(cancelOrderId, 3);
         }
     }
 }
