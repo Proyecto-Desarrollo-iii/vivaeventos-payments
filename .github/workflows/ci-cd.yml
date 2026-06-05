@@ -130,8 +130,9 @@ jobs:
         run: gcloud auth configure-docker gcr.io --quiet
       - name: Pull from GHCR and push to GCR
         run: |
-          docker pull ghcr.io/${{ lower(github.repository) }}:${{ github.ref_name }}
-          docker tag ghcr.io/${{ lower(github.repository) }}:${{ github.ref_name }} \
+          REPO_LOWER=${GITHUB_REPOSITORY,,}
+          docker pull ghcr.io/$REPO_LOWER:${{ github.ref_name }}
+          docker tag ghcr.io/$REPO_LOWER:${{ github.ref_name }} \
             gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
           docker push gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
       - name: Deploy to Cloud Run
