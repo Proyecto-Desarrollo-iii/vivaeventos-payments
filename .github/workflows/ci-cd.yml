@@ -126,11 +126,19 @@ jobs:
         with:
           workload_identity_provider: projects/834797281102/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: cloud-run-admin@vivaeventos-498516.iam.gserviceaccount.com
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io --quiet
+      - name: Pull from GHCR and push to GCR
+        run: |
+          docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          docker tag ghcr.io/${{ github.repository }}:${{ github.ref_name }} \
+            gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
+          docker push gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: vivaeventos-payments
-          image: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          image: gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
           region: us-central1
           env_vars: |
             SERVER_PORT=8080
