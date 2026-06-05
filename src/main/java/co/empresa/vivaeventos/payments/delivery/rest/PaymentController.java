@@ -27,6 +27,8 @@ import java.util.UUID;
 @Slf4j
 public class PaymentController {
 
+    private static final String ERROR_KEY = "error";
+
     private final IPaymentService paymentService;
     private final StripeConfig stripeConfig;
     private final ObjectMapper objectMapper;
@@ -147,15 +149,15 @@ public class PaymentController {
         } catch (IllegalStateException e) {
             log.warn("Cannot cancel payment for order {}: {}", orderId, e.getMessage());
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", e.getMessage()));
+                    .body(Map.of(ERROR_KEY, e.getMessage()));
         } catch (IllegalArgumentException e) {
             log.warn("Payment not found for order {}: {}", orderId, e.getMessage());
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", e.getMessage()));
+                    .body(Map.of(ERROR_KEY, e.getMessage()));
         } catch (Exception e) {
             log.error("Error cancelling payment for order {}: {}", orderId, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Error interno al cancelar la orden"));
+                    .body(Map.of(ERROR_KEY, "Error interno al cancelar la orden"));
         }
     }
 

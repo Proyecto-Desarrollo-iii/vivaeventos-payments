@@ -528,6 +528,98 @@ class PaymentServiceImplTest {
     }
 
     @Test
+    void cancelPayment_success_savesCancelledFirst() {
+        UUID orderId = UUID.randomUUID();
+        Payment payment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(orderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.PENDING)
+                .providerReference("pi_test_cancel")
+                .userEmail("user@test.com")
+                .build();
+
+        when(paymentRepository.findByOrderIdWithLock(orderId)).thenReturn(Optional.of(payment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getStatus()).thenReturn("requires_payment_method");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test_cancel")).thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.cancelPayment(orderId);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.CANCELLED);
+
+            verify(paymentRepository, times(1)).save(any(Payment.class));
+            verify(ordersClient).updateOrderStatus(orderId, "CANCELLED");
+            verify(ticketsClient).releaseTicketsByOrderWithRetry(orderId, 3);
+        }
+    }
+
+    @Test
+    void cancelPayment_paidPayment_throwsException() {
+        UUID orderId = UUID.randomUUID();
+        Payment payment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(orderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.PAID)
+                .build();
+
+        when(paymentRepository.findByOrderIdWithLock(orderId)).thenReturn(Optional.of(payment));
+
+        assertThatThrownBy(() -> paymentService.cancelPayment(orderId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Cannot cancel a paid payment");
+    }
+
+    @Test
+    void cancelPayment_cancelledPayment_throwsException() {
+        UUID orderId = UUID.randomUUID();
+        Payment payment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(orderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.CANCELLED)
+                .build();
+
+        when(paymentRepository.findByOrderIdWithLock(orderId)).thenReturn(Optional.of(payment));
+
+        assertThatThrownBy(() -> paymentService.cancelPayment(orderId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Payment already cancelled");
+    }
+
+    @Test
+    void cancelPayment_refundedPayment_throwsException() {
+        UUID orderId = UUID.randomUUID();
+        Payment payment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(orderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.REFUNDED)
+                .build();
+
+        when(paymentRepository.findByOrderIdWithLock(orderId)).thenReturn(Optional.of(payment));
+
+        assertThatThrownBy(() -> paymentService.cancelPayment(orderId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Cannot cancel a refunded payment");
+    }
+
+    @Test
+    void cancelPayment_paymentNotFound_throwsException() {
+        UUID orderId = UUID.randomUUID();
+        when(paymentRepository.findByOrderIdWithLock(orderId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> paymentService.cancelPayment(orderId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("No payment found for order");
+    }
+
+    @Test
     void processRefund_stripeException_throwsRuntimeException() throws StripeException {
         String refundKey = "refund-key-fail";
         UUID payId = UUID.randomUUID();

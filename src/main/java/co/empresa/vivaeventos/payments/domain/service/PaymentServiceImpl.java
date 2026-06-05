@@ -363,7 +363,7 @@ public class PaymentServiceImpl implements IPaymentService {
                     promoPlaceholders.put("evento", eventName);
                     promoPlaceholders.put("descuento", discount);
                     promoPlaceholders.put("codigo_promocion", code);
-                    promoPlaceholders.put("fecha_expiracion", java.time.LocalDateTime.now().plusDays(30).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+                    promoPlaceholders.put("fecha_expiracion", java.time.LocalDateTime.now(java.time.ZoneId.of("America/Bogota")).plusDays(30).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
 
                     notificationsClient.sendNotification(
                         payment.getUserId(),
