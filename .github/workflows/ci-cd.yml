@@ -133,20 +133,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker gcr.io --quiet
-      - name: Pull from GHCR and push to GCR
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+      - name: Pull from GHCR and push to Artifact Registry
         run: |
           REPO_LOWER=${GITHUB_REPOSITORY,,}
           docker pull ghcr.io/$REPO_LOWER:${{ github.ref_name }}
           docker tag ghcr.io/$REPO_LOWER:${{ github.ref_name }} \
-            gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
-          docker push gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
+            us-central1-docker.pkg.dev/vivaeventos-498516/cloud-run-images/vivaeventos-payments:${{ github.ref_name }}
+          docker push us-central1-docker.pkg.dev/vivaeventos-498516/cloud-run-images/vivaeventos-payments:${{ github.ref_name }}
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: vivaeventos-payments
-          image: gcr.io/vivaeventos-498516/vivaeventos-payments:${{ github.ref_name }}
+          image: us-central1-docker.pkg.dev/vivaeventos-498516/cloud-run-images/vivaeventos-payments:${{ github.ref_name }}
           region: us-central1
           env_vars: |
             SERVER_PORT=8080
