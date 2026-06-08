@@ -1,5 +1,7 @@
 package co.empresa.vivaeventos.payments.config;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
@@ -7,6 +9,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class AuditLoggingInterceptor implements HandlerInterceptor {
@@ -14,9 +17,11 @@ public class AuditLoggingInterceptor implements HandlerInterceptor {
     private static final List<String> EXCLUDED_PATHS = Arrays.asList("/actuator", "/error");
 
     private final AuditEventClient auditEventClient;
+    private final ObjectMapper objectMapper;
 
-    public AuditLoggingInterceptor(AuditEventClient auditEventClient) {
+    public AuditLoggingInterceptor(AuditEventClient auditEventClient, ObjectMapper objectMapper) {
         this.auditEventClient = auditEventClient;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -38,7 +43,17 @@ public class AuditLoggingInterceptor implements HandlerInterceptor {
         String method = request.getMethod();
         int status = response.getStatus();
 
-        String newValues = "{\"method\":\"" + method + "\",\"path\":\"" + path + "\",\"status\":" + status + ",\"durationMs\":" + duration + "}";
+        String newValues;
+        try {
+            newValues = objectMapper.writeValueAsString(Map.of(
+                    "method", method,
+                    "path", path,
+                    "status", status,
+                    "durationMs", duration
+            ));
+        } catch (JsonProcessingException e) {
+            newValues = "{}";
+        }
 
         auditEventClient.logEvent(new AuditEventRequest("payments", userId, userRole, "HTTP_REQUEST", method, null, null, newValues));
     }

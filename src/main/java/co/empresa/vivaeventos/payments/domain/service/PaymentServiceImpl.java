@@ -16,6 +16,8 @@ import co.empresa.vivaeventos.payments.domain.model.WebhookEvent;
 import co.empresa.vivaeventos.payments.domain.repository.IPaymentRepository;
 import co.empresa.vivaeventos.payments.domain.repository.IPromotionRepository;
 import co.empresa.vivaeventos.payments.domain.repository.IWebhookEventRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
@@ -48,6 +50,7 @@ public class PaymentServiceImpl implements IPaymentService {
     private final EventsClient eventsClient;
     private final IPromotionRepository promotionRepository;
     private final AuditEventClient auditEventClient;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -131,7 +134,7 @@ public class PaymentServiceImpl implements IPaymentService {
 
             auditEventClient.logEvent(new AuditEventRequest("payments", userId, null,
                     "CREAR_PAGO", "pago", payment.getId().toString(),
-                    null, "{\"orderId\":\"" + request.getOrderId() + "\",\"amount\":" + request.getAmount() + "}"));
+                    null, toJson(Map.of("orderId", request.getOrderId(), "amount", request.getAmount()))));
 
             String clientSecret = paymentIntent.getClientSecret();
             return PaymentResponse.fromEntity(payment, clientSecret);
@@ -203,7 +206,7 @@ public class PaymentServiceImpl implements IPaymentService {
             auditEventClient.logEvent(new AuditEventRequest("payments",
                     payment.getUserId() != null ? payment.getUserId().toString() : null,
                     null, "CONFIRMAR_PAGO", "pago", payment.getId().toString(),
-                    null, "{\"status\":\"" + newStatus + "\",\"orderId\":\"" + payment.getOrderId() + "\"}"));
+                    null, toJson(Map.of("status", newStatus.name(), "orderId", payment.getOrderId()))));
             return PaymentResponse.fromEntity(payment);
 
         } catch (StripeException e) {
@@ -664,7 +667,7 @@ public class PaymentServiceImpl implements IPaymentService {
         auditEventClient.logEvent(new AuditEventRequest("payments",
                 payment.getUserId() != null ? payment.getUserId().toString() : null,
                 null, "CANCELAR_PAGO", "pago", payment.getId().toString(),
-                null, "{\"status\":\"CANCELLED\",\"orderId\":\"" + orderId + "\"}"));
+                null, toJson(Map.of("status", "CANCELLED", "orderId", orderId))));
 
         return PaymentResponse.fromEntity(payment);
     }
@@ -748,14 +751,23 @@ public class PaymentServiceImpl implements IPaymentService {
             auditEventClient.logEvent(new AuditEventRequest("payments",
                     payment.getUserId() != null ? payment.getUserId().toString() : null,
                     null, "REEMBOLSAR_PAGO", "pago", payment.getId().toString(),
-                    "{\"status\":\"" + payment.getStatus() + "\"}",
-                    "{\"status\":\"REFUNDED\",\"refundId\":\"" + refund.getId() + "\"}"));
+                    toJson(Map.of("status", payment.getStatus().name())),
+                    toJson(Map.of("status", "REFUNDED", "refundId", refund.getId()))));
 
             return PaymentResponse.fromEntity(payment);
 
         } catch (StripeException e) {
             log.error("Failed to process refund: {}", e.getMessage());
             throw new RuntimeException("Failed to process refund: " + e.getMessage(), e);
+        }
+    }
+
+    private String toJson(Map<String, Object> map) {
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize audit event data: {}", e.getMessage());
+            return "{}";
         }
     }
 }

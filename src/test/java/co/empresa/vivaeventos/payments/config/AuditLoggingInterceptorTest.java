@@ -1,5 +1,6 @@
 package co.empresa.vivaeventos.payments.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,11 +21,13 @@ class AuditLoggingInterceptorTest {
     @Mock
     private HttpServletResponse response;
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     private AuditLoggingInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
-        interceptor = new AuditLoggingInterceptor(auditEventClient);
+        interceptor = new AuditLoggingInterceptor(auditEventClient, objectMapper);
     }
 
     @Test
