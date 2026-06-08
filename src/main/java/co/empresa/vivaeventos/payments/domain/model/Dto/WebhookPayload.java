@@ -1,4 +1,4 @@
-package co.empresa.vivaeventos.payments.domain.model.dto;
+package co.empresa.vivaeventos.payments.domain.model.Dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

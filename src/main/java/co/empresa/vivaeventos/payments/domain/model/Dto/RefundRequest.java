@@ -1,4 +1,4 @@
-package co.empresa.vivaeventos.payments.domain.model.dto;
+package co.empresa.vivaeventos.payments.domain.model.Dto;
 
 import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
