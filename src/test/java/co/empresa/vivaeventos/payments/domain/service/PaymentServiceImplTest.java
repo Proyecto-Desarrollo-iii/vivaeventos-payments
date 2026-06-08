@@ -1,5 +1,7 @@
 package co.empresa.vivaeventos.payments.domain.service;
 
+import co.empresa.vivaeventos.payments.config.AuditEventClient;
+import co.empresa.vivaeventos.payments.config.AuditEventRequest;
 import co.empresa.vivaeventos.payments.config.EventsClient;
 import co.empresa.vivaeventos.payments.config.NotificationsClient;
 import co.empresa.vivaeventos.payments.config.OrdersClient;
@@ -13,10 +15,12 @@ import co.empresa.vivaeventos.payments.domain.model.WebhookEvent;
 import co.empresa.vivaeventos.payments.domain.repository.IPaymentRepository;
 import co.empresa.vivaeventos.payments.domain.repository.IPromotionRepository;
 import co.empresa.vivaeventos.payments.domain.repository.IWebhookEventRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.PaymentIntentRetrieveParams;
 import com.stripe.param.RefundCreateParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +65,11 @@ class PaymentServiceImplTest {
     @Mock
     private IPromotionRepository promotionRepository;
 
+    @Mock
+    private AuditEventClient auditEventClient;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     private PaymentServiceImpl paymentService;
 
     private CreatePaymentRequest validRequest;
@@ -79,7 +88,7 @@ class PaymentServiceImplTest {
     @BeforeEach
     void setUp() {
         paymentService = new PaymentServiceImpl(
-                paymentRepository, webhookEventRepository, ordersClient, ticketsClient, notificationsClient, eventsClient, promotionRepository);
+                paymentRepository, webhookEventRepository, ordersClient, ticketsClient, notificationsClient, eventsClient, promotionRepository, auditEventClient, objectMapper);
 
         orderId = UUID.randomUUID();
         paymentId = UUID.randomUUID();
@@ -140,7 +149,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withSameIdempotencyKey_returnsExistingPayment() {
+    void createPaymentIntentWithSameIdempotencyKeyReturnsExistingPayment() {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.of(existingPayment));
 
@@ -162,7 +171,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withExistingActivePayment_throwsException() {
+    void createPaymentIntentWithExistingActivePaymentThrowsException() {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -177,7 +186,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withExistingIdempotencyKeyAfterLock_returnsExisting() throws StripeException {
+    void createPaymentIntentWithExistingIdempotencyKeyAfterLockReturnsExisting() throws StripeException {
         String key = "lock-race-key";
         Payment lockedPayment = Payment.builder()
                 .id(UUID.randomUUID())
@@ -211,7 +220,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withExistingApprovedPayment_throwsException() {
+    void createPaymentIntentWithExistingApprovedPaymentThrowsException() {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -224,7 +233,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withFailedOrder_createsNewPayment() throws StripeException {
+    void createPaymentIntentWithFailedOrderCreatesNewPayment() throws StripeException {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -261,7 +270,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_concurrentIdempotencyKey_catchesDataIntegrityViolation() throws StripeException {
+    void createPaymentIntentConcurrentIdempotencyKeyCatchesDataIntegrityViolation() throws StripeException {
         Payment existingConflict = Payment.builder()
                 .id(UUID.randomUUID())
                 .orderId(orderId)
@@ -299,7 +308,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_stripeException_throwsRuntimeException() throws StripeException {
+    void createPaymentIntentStripeExceptionThrowsRuntimeException() throws StripeException {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -317,7 +326,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_withDuplicateEventId_skipsProcessing() {
+    void handleWebhookWithDuplicateEventIdSkipsProcessing() {
         String eventId = "evt_test_001";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -337,7 +346,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_withNewEventAndSucceededStatus_updatesPayment() {
+    void handleWebhookWithNewEventAndSucceededStatusUpdatesPayment() {
         String eventId = "evt_test_002";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -360,7 +369,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_withFailedStatus_callsHandlePaymentFailure() {
+    void handleWebhookWithFailedStatusCallsHandlePaymentFailure() {
         String eventId = "evt_test_003";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -386,7 +395,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_paymentNotFound_logsWarning() {
+    void handleWebhookPaymentNotFoundLogsWarning() {
         String eventId = "evt_test_004";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -406,7 +415,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_withSameIdempotencyKey_returnsExisting() {
+    void processRefundWithSameIdempotencyKeyReturnsExisting() {
         String refundKey = "refund-key-001";
         RefundRequest request = RefundRequest.builder()
                 .reason("requested_by_customer")
@@ -426,7 +435,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_withNewKey_processesRefund() throws StripeException {
+    void processRefundWithNewKeyProcessesRefund() throws StripeException {
         String refundKey = "refund-key-new";
         UUID payId = UUID.randomUUID();
         Payment payment = Payment.builder()
@@ -467,7 +476,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_withNonApprovedPayment_throwsException() {
+    void processRefundWithNonApprovedPaymentThrowsException() {
         String refundKey = "refund-key-002";
         RefundRequest request = RefundRequest.builder().build();
 
@@ -481,7 +490,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_concurrentDataIntegrity_caught() throws StripeException {
+    void processRefundConcurrentDataIntegrityCaught() throws StripeException {
         String refundKey = "refund-key-concurrent";
         UUID payId = UUID.randomUUID();
         Payment payment = Payment.builder()
@@ -528,7 +537,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_stripeException_throwsRuntimeException() throws StripeException {
+    void processRefundStripeExceptionThrowsRuntimeException() throws StripeException {
         String refundKey = "refund-key-fail";
         UUID payId = UUID.randomUUID();
         Payment payment = Payment.builder()
@@ -553,6 +562,178 @@ class PaymentServiceImplTest {
                     payId, refundKey, request))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Failed to process refund");
+        }
+    }
+
+    @Test
+    void confirmPaymentWhenAlreadyPaidReturnsExisting() {
+        Payment paidPayment = Payment.builder()
+                .id(paymentId)
+                .orderId(orderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.PAID)
+                .providerReference("pi_test_paid")
+                .build();
+
+        when(paymentRepository.findByProviderReferenceWithLock("pi_test_paid"))
+                .thenReturn(Optional.of(paidPayment));
+
+        PaymentResponse response = paymentService.confirmPayment("pi_test_paid");
+
+        assertThat(response).isNotNull();
+        assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.PAID);
+        verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
+    void confirmPaymentWithSucceededStatusUpdatesAndAudits() throws StripeException {
+        when(paymentRepository.findByProviderReferenceWithLock("pi_test_success"))
+                .thenReturn(Optional.of(pendingPayment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getStatus()).thenReturn("succeeded");
+            piStatic.when(() -> PaymentIntent.retrieve(eq("pi_test_success"), any(PaymentIntentRetrieveParams.class), isNull()))
+                    .thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.confirmPayment("pi_test_success");
+
+            assertThat(response).isNotNull();
+            assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.PAID);
+            verify(auditEventClient).logEvent(argThat(req ->
+                    "CONFIRMAR_PAGO".equals(req.action()) && req.newValues().contains("PAID")));
+            verify(ordersClient).updateOrderStatus(orderId, "PAID");
+        }
+    }
+
+    @Test
+    void confirmPaymentWithStripeExceptionThrowsRuntimeException() throws StripeException {
+        when(paymentRepository.findByProviderReferenceWithLock("pi_test_fail"))
+                .thenReturn(Optional.of(pendingPayment));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.retrieve(eq("pi_test_fail"), any(PaymentIntentRetrieveParams.class), isNull()))
+                    .thenThrow(mock(StripeException.class));
+
+            assertThatThrownBy(() -> paymentService.confirmPayment("pi_test_fail"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Failed to confirm payment");
+        }
+    }
+
+    @Test
+    void cancelPaymentCancelsSuccessfullyAndAudits() throws StripeException {
+        UUID cancelOrderId = UUID.randomUUID();
+        Payment cancelPayment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(cancelOrderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.PENDING)
+                .providerReference("pi_test_cancel")
+                .userEmail("user@test.com")
+                .build();
+
+        when(paymentRepository.findByOrderIdWithLock(cancelOrderId))
+                .thenReturn(Optional.of(cancelPayment));
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(i -> i.getArgument(0));
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            PaymentIntent mockPi = mock(PaymentIntent.class);
+            when(mockPi.getStatus()).thenReturn("requires_payment_method");
+            piStatic.when(() -> PaymentIntent.retrieve("pi_test_cancel"))
+                    .thenReturn(mockPi);
+
+            PaymentResponse response = paymentService.cancelPayment(cancelOrderId);
+
+            assertThat(response).isNotNull();
+            assertThat(response.getStatus()).isEqualTo(Payment.PaymentStatus.CANCELLED);
+            verify(mockPi).cancel();
+            verify(auditEventClient).logEvent(argThat(req ->
+                    "CANCELAR_PAGO".equals(req.action()) && req.newValues().contains("CANCELLED")));
+            verify(ordersClient).updateOrderStatus(cancelOrderId, "CANCELLED");
+        }
+    }
+
+    @Test
+    void cancelPaymentAlreadyPaidThrowsException() {
+        UUID cancelOrderId = UUID.randomUUID();
+        Payment paidPayment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(cancelOrderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.PAID)
+                .providerReference("pi_test_paid")
+                .build();
+
+        when(paymentRepository.findByOrderIdWithLock(cancelOrderId))
+                .thenReturn(Optional.of(paidPayment));
+
+        assertThatThrownBy(() -> paymentService.cancelPayment(cancelOrderId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Cannot cancel a paid payment");
+    }
+
+    @Test
+    void cancelPaymentAlreadyCancelledThrowsException() {
+        UUID cancelOrderId = UUID.randomUUID();
+        Payment cancelledPayment = Payment.builder()
+                .id(UUID.randomUUID())
+                .orderId(cancelOrderId)
+                .amount(BigDecimal.valueOf(50000))
+                .status(Payment.PaymentStatus.CANCELLED)
+                .providerReference("pi_test_cancelled")
+                .build();
+
+        when(paymentRepository.findByOrderIdWithLock(cancelOrderId))
+                .thenReturn(Optional.of(cancelledPayment));
+
+        assertThatThrownBy(() -> paymentService.cancelPayment(cancelOrderId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Payment already cancelled");
+    }
+
+    @Test
+    void createPaymentIntentWithNewPaymentSendsAuditEvent() throws StripeException {
+        UUID newOrderId = UUID.randomUUID();
+        CreatePaymentRequest newRequest = CreatePaymentRequest.builder()
+                .orderId(newOrderId)
+                .amount(BigDecimal.valueOf(75000))
+                .currency("USD")
+                .build();
+
+        when(paymentRepository.findByIdempotencyKey(idempotencyKey))
+                .thenReturn(Optional.empty());
+        when(paymentRepository.findByOrderIdWithLock(newOrderId))
+                .thenReturn(Optional.empty());
+
+        PaymentIntent mockPaymentIntent = mock(PaymentIntent.class);
+        when(mockPaymentIntent.getId()).thenReturn("pi_test_audit");
+        when(mockPaymentIntent.getClientSecret()).thenReturn(clientSecret);
+
+        try (MockedStatic<PaymentIntent> piStatic = mockStatic(PaymentIntent.class)) {
+            piStatic.when(() -> PaymentIntent.create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                    .thenReturn(mockPaymentIntent);
+
+            Payment savedPayment = Payment.builder()
+                    .id(UUID.randomUUID())
+                    .orderId(newOrderId)
+                    .idempotencyKey(idempotencyKey)
+                    .providerReference("pi_test_audit")
+                    .amount(BigDecimal.valueOf(75000))
+                    .currency("USD")
+                    .status(Payment.PaymentStatus.PENDING)
+                    .paymentProvider("STRIPE")
+                    .build();
+
+            when(paymentRepository.save(any(Payment.class))).thenReturn(savedPayment);
+
+            paymentService.createPaymentIntent(newRequest, idempotencyKey, userId, userEmail);
+
+            verify(auditEventClient).logEvent(argThat(req ->
+                    "CREAR_PAGO".equals(req.action()) &&
+                    req.newValues().contains("75000") &&
+                    req.newValues().contains(newOrderId.toString())));
         }
     }
 }
