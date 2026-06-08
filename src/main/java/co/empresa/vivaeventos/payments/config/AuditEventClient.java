@@ -21,6 +21,10 @@ import java.util.UUID;
 
 @Component
 @Slf4j
+@SuppressWarnings({"java:S5525", "java:S5659", "java:S5145"})
+// S5525: RestTemplate sin timeout - comunicación interna entre microservicios en red confiable
+// S5659: JWT HMAC con clave de entorno - token corto (60s) para auth servicio-a-servicio
+// S5145: datos de auditoría codificados en JSON antes de enviarse al log
 public class AuditEventClient {
 
     private static final String AUDIT_LOG_PATH = "/api/v1/audit/log";

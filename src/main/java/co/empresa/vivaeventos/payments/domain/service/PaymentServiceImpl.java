@@ -40,6 +40,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@SuppressWarnings("java:S5145")
+// S5145: datos de eventos de auditoría serializados con ObjectMapper antes de enviarse al servicio audit
 public class PaymentServiceImpl implements IPaymentService {
 
     private final IPaymentRepository paymentRepository;

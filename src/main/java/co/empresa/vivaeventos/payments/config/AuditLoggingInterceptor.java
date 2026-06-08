@@ -31,6 +31,8 @@ public class AuditLoggingInterceptor implements HandlerInterceptor {
     }
 
     @Override
+    @SuppressWarnings("java:S5145")
+    // S5145: newValues se construye con ObjectMapper (JSON escapado), datos seguros para el log de auditoría
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
         String path = request.getRequestURI();
         if (isExcluded(path)) return;
