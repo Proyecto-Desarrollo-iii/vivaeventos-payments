@@ -2,10 +2,10 @@ package co.empresa.vivaeventos.payments.delivery.rest;
 
 import co.empresa.vivaeventos.payments.config.JwtUtil;
 import co.empresa.vivaeventos.payments.config.StripeConfig;
-import co.empresa.vivaeventos.payments.domain.model.dto.CreatePaymentRequest;
-import co.empresa.vivaeventos.payments.domain.model.dto.PaymentResponse;
-import co.empresa.vivaeventos.payments.domain.model.dto.RefundRequest;
-import co.empresa.vivaeventos.payments.domain.model.dto.WebhookPayload;
+import co.empresa.vivaeventos.payments.domain.model.Dto.CreatePaymentRequest;
+import co.empresa.vivaeventos.payments.domain.model.Dto.PaymentResponse;
+import co.empresa.vivaeventos.payments.domain.model.Dto.RefundRequest;
+import co.empresa.vivaeventos.payments.domain.model.Dto.WebhookPayload;
 import co.empresa.vivaeventos.payments.domain.service.IPaymentService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
