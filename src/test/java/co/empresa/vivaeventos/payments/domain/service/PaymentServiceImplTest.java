@@ -5,10 +5,10 @@ import co.empresa.vivaeventos.payments.config.EventsClient;
 import co.empresa.vivaeventos.payments.config.NotificationsClient;
 import co.empresa.vivaeventos.payments.config.OrdersClient;
 import co.empresa.vivaeventos.payments.config.TicketsClient;
-import co.empresa.vivaeventos.payments.domain.model.Dto.CreatePaymentRequest;
-import co.empresa.vivaeventos.payments.domain.model.Dto.PaymentResponse;
-import co.empresa.vivaeventos.payments.domain.model.Dto.RefundRequest;
-import co.empresa.vivaeventos.payments.domain.model.Dto.WebhookPayload;
+import co.empresa.vivaeventos.payments.domain.model.dto.CreatePaymentRequest;
+import co.empresa.vivaeventos.payments.domain.model.dto.PaymentResponse;
+import co.empresa.vivaeventos.payments.domain.model.dto.RefundRequest;
+import co.empresa.vivaeventos.payments.domain.model.dto.WebhookPayload;
 import co.empresa.vivaeventos.payments.domain.model.Payment;
 import co.empresa.vivaeventos.payments.domain.model.WebhookEvent;
 import co.empresa.vivaeventos.payments.domain.repository.IPaymentRepository;
@@ -144,7 +144,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withSameIdempotencyKey_returnsExistingPayment() {
+    void createPaymentIntentWithSameIdempotencyKeyReturnsExistingPayment() {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.of(existingPayment));
 
@@ -166,7 +166,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withExistingActivePayment_throwsException() {
+    void createPaymentIntentWithExistingActivePaymentThrowsException() {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -181,7 +181,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withExistingIdempotencyKeyAfterLock_returnsExisting() throws StripeException {
+    void createPaymentIntentWithExistingIdempotencyKeyAfterLockReturnsExisting() throws StripeException {
         String key = "lock-race-key";
         Payment lockedPayment = Payment.builder()
                 .id(UUID.randomUUID())
@@ -215,7 +215,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withExistingApprovedPayment_throwsException() {
+    void createPaymentIntentWithExistingApprovedPaymentThrowsException() {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -228,7 +228,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_withFailedOrder_createsNewPayment() throws StripeException {
+    void createPaymentIntentWithFailedOrderCreatesNewPayment() throws StripeException {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -265,7 +265,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_concurrentIdempotencyKey_catchesDataIntegrityViolation() throws StripeException {
+    void createPaymentIntentConcurrentIdempotencyKeyCatchesDataIntegrityViolation() throws StripeException {
         Payment existingConflict = Payment.builder()
                 .id(UUID.randomUUID())
                 .orderId(orderId)
@@ -303,7 +303,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void createPaymentIntent_stripeException_throwsRuntimeException() throws StripeException {
+    void createPaymentIntentStripeExceptionThrowsRuntimeException() throws StripeException {
         when(paymentRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty());
         when(paymentRepository.findByOrderIdWithLock(orderId))
@@ -321,7 +321,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_withDuplicateEventId_skipsProcessing() {
+    void handleWebhookWithDuplicateEventIdSkipsProcessing() {
         String eventId = "evt_test_001";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -341,7 +341,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_withNewEventAndSucceededStatus_updatesPayment() {
+    void handleWebhookWithNewEventAndSucceededStatusUpdatesPayment() {
         String eventId = "evt_test_002";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -364,7 +364,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_withFailedStatus_callsHandlePaymentFailure() {
+    void handleWebhookWithFailedStatusCallsHandlePaymentFailure() {
         String eventId = "evt_test_003";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -390,7 +390,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void handleWebhook_paymentNotFound_logsWarning() {
+    void handleWebhookPaymentNotFoundLogsWarning() {
         String eventId = "evt_test_004";
         WebhookPayload payload = WebhookPayload.builder()
                 .eventId(eventId)
@@ -410,7 +410,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_withSameIdempotencyKey_returnsExisting() {
+    void processRefundWithSameIdempotencyKeyReturnsExisting() {
         String refundKey = "refund-key-001";
         RefundRequest request = RefundRequest.builder()
                 .reason("requested_by_customer")
@@ -430,7 +430,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_withNewKey_processesRefund() throws StripeException {
+    void processRefundWithNewKeyProcessesRefund() throws StripeException {
         String refundKey = "refund-key-new";
         UUID payId = UUID.randomUUID();
         Payment payment = Payment.builder()
@@ -471,7 +471,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_withNonApprovedPayment_throwsException() {
+    void processRefundWithNonApprovedPaymentThrowsException() {
         String refundKey = "refund-key-002";
         RefundRequest request = RefundRequest.builder().build();
 
@@ -485,7 +485,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_concurrentDataIntegrity_caught() throws StripeException {
+    void processRefundConcurrentDataIntegrityCaught() throws StripeException {
         String refundKey = "refund-key-concurrent";
         UUID payId = UUID.randomUUID();
         Payment payment = Payment.builder()
@@ -532,7 +532,7 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void processRefund_stripeException_throwsRuntimeException() throws StripeException {
+    void processRefundStripeExceptionThrowsRuntimeException() throws StripeException {
         String refundKey = "refund-key-fail";
         UUID payId = UUID.randomUUID();
         Payment payment = Payment.builder()

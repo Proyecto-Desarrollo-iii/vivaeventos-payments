@@ -23,6 +23,8 @@ import java.util.UUID;
 @Slf4j
 public class AuditEventClient {
 
+    private static final String AUDIT_LOG_PATH = "/api/v1/audit/log";
+
     private final RestTemplate restTemplate;
     private final String auditBaseUrl;
     private final SecretKey signingKey;
@@ -52,24 +54,22 @@ public class AuditEventClient {
         return headers;
     }
 
-    public void logEvent(String serviceName, String userId, String userRole,
-                         String action, String entityType, String entityId,
-                         String oldValues, String newValues) {
+    public void logEvent(AuditEventRequest request) {
         try {
-            String url = auditBaseUrl + "/api/v1/audit/log";
+            String url = auditBaseUrl + AUDIT_LOG_PATH;
             Map<String, Object> body = new HashMap<>();
-            body.put("serviceName", serviceName);
-            if (userId != null) body.put("userId", UUID.fromString(userId));
-            if (userRole != null) body.put("userRole", userRole);
-            body.put("action", action);
-            if (entityType != null) body.put("entityType", entityType);
-            if (entityId != null) body.put("entityId", UUID.fromString(entityId));
-            if (oldValues != null) body.put("oldValues", oldValues);
-            if (newValues != null) body.put("newValues", newValues);
+            body.put("serviceName", request.serviceName());
+            if (request.userId() != null) body.put("userId", UUID.fromString(request.userId()));
+            if (request.userRole() != null) body.put("userRole", request.userRole());
+            body.put("action", request.action());
+            if (request.entityType() != null) body.put("entityType", request.entityType());
+            if (request.entityId() != null) body.put("entityId", UUID.fromString(request.entityId()));
+            if (request.oldValues() != null) body.put("oldValues", request.oldValues());
+            if (request.newValues() != null) body.put("newValues", request.newValues());
 
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, authHeaders());
-            restTemplate.exchange(url, HttpMethod.POST, request, Void.class);
-            log.info("Audit event sent: {} {} {}", serviceName, action, entityId);
+            HttpEntity<Map<String, Object>> req = new HttpEntity<>(body, authHeaders());
+            restTemplate.exchange(url, HttpMethod.POST, req, Void.class);
+            log.info("Audit event sent: {} {} {}", request.serviceName(), request.action(), request.entityId());
         } catch (Exception e) {
             log.error("Failed to send audit event: {}", e.getMessage());
         }

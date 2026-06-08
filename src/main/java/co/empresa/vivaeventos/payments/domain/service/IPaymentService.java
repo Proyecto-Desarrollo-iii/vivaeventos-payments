@@ -1,9 +1,9 @@
 package co.empresa.vivaeventos.payments.domain.service;
 
-import co.empresa.vivaeventos.payments.domain.model.Dto.CreatePaymentRequest;
-import co.empresa.vivaeventos.payments.domain.model.Dto.PaymentResponse;
-import co.empresa.vivaeventos.payments.domain.model.Dto.RefundRequest;
-import co.empresa.vivaeventos.payments.domain.model.Dto.WebhookPayload;
+import co.empresa.vivaeventos.payments.domain.model.dto.CreatePaymentRequest;
+import co.empresa.vivaeventos.payments.domain.model.dto.PaymentResponse;
+import co.empresa.vivaeventos.payments.domain.model.dto.RefundRequest;
+import co.empresa.vivaeventos.payments.domain.model.dto.WebhookPayload;
 
 import java.util.UUID;
 
