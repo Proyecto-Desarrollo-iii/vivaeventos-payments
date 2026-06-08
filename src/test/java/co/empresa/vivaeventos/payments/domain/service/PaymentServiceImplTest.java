@@ -1,5 +1,6 @@
 package co.empresa.vivaeventos.payments.domain.service;
 
+import co.empresa.vivaeventos.payments.config.AuditEventClient;
 import co.empresa.vivaeventos.payments.config.EventsClient;
 import co.empresa.vivaeventos.payments.config.NotificationsClient;
 import co.empresa.vivaeventos.payments.config.OrdersClient;
@@ -61,6 +62,9 @@ class PaymentServiceImplTest {
     @Mock
     private IPromotionRepository promotionRepository;
 
+    @Mock
+    private AuditEventClient auditEventClient;
+
     private PaymentServiceImpl paymentService;
 
     private CreatePaymentRequest validRequest;
@@ -79,7 +83,7 @@ class PaymentServiceImplTest {
     @BeforeEach
     void setUp() {
         paymentService = new PaymentServiceImpl(
-                paymentRepository, webhookEventRepository, ordersClient, ticketsClient, notificationsClient, eventsClient, promotionRepository);
+                paymentRepository, webhookEventRepository, ordersClient, ticketsClient, notificationsClient, eventsClient, promotionRepository, auditEventClient);
 
         orderId = UUID.randomUUID();
         paymentId = UUID.randomUUID();

@@ -1,5 +1,6 @@
 package co.empresa.vivaeventos.payments.domain.service;
 
+import co.empresa.vivaeventos.payments.config.AuditEventClient;
 import co.empresa.vivaeventos.payments.config.EventsClient;
 import co.empresa.vivaeventos.payments.config.NotificationsClient;
 import co.empresa.vivaeventos.payments.config.OrdersClient;
@@ -45,6 +46,7 @@ public class PaymentServiceImpl implements IPaymentService {
     private final NotificationsClient notificationsClient;
     private final EventsClient eventsClient;
     private final IPromotionRepository promotionRepository;
+    private final AuditEventClient auditEventClient;
 
     @Override
     @Transactional
@@ -126,6 +128,10 @@ public class PaymentServiceImpl implements IPaymentService {
 
             log.info("Payment created with ID: {} for idempotencyKey: {}", payment.getId(), idempotencyKey);
 
+            auditEventClient.logEvent("payments", userId, null,
+                    "CREAR_PAGO", "pago", payment.getId().toString(),
+                    null, "{\"orderId\":\"" + request.getOrderId() + "\",\"amount\":" + request.getAmount() + "}");
+
             String clientSecret = paymentIntent.getClientSecret();
             return PaymentResponse.fromEntity(payment, clientSecret);
 
@@ -192,6 +198,11 @@ public class PaymentServiceImpl implements IPaymentService {
 
             payment = paymentRepository.save(payment);
             log.info("Payment confirmed with status: {}", newStatus);
+
+            auditEventClient.logEvent("payments",
+                    payment.getUserId() != null ? payment.getUserId().toString() : null,
+                    null, "CONFIRMAR_PAGO", "pago", payment.getId().toString(),
+                    null, "{\"status\":\"" + newStatus + "\",\"orderId\":\"" + payment.getOrderId() + "\"}");
             return PaymentResponse.fromEntity(payment);
 
         } catch (StripeException e) {
@@ -633,6 +644,12 @@ public class PaymentServiceImpl implements IPaymentService {
         }
 
         log.info("Payment cancelled for order: {}", orderId);
+
+        auditEventClient.logEvent("payments",
+                payment.getUserId() != null ? payment.getUserId().toString() : null,
+                null, "CANCELAR_PAGO", "pago", payment.getId().toString(),
+                null, "{\"status\":\"CANCELLED\",\"orderId\":\"" + orderId + "\"}");
+
         return PaymentResponse.fromEntity(payment);
     }
 
@@ -711,6 +728,13 @@ public class PaymentServiceImpl implements IPaymentService {
             }
 
             log.info("Refund processed: {} with idempotencyKey: {}", refund.getId(), idempotencyKey);
+
+            auditEventClient.logEvent("payments",
+                    payment.getUserId() != null ? payment.getUserId().toString() : null,
+                    null, "REEMBOLSAR_PAGO", "pago", payment.getId().toString(),
+                    "{\"status\":\"" + payment.getStatus() + "\"}",
+                    "{\"status\":\"REFUNDED\",\"refundId\":\"" + refund.getId() + "\"}");
+
             return PaymentResponse.fromEntity(payment);
 
         } catch (StripeException e) {
