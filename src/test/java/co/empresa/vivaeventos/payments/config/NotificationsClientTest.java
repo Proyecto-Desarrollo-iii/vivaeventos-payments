@@ -2,11 +2,11 @@ package co.empresa.vivaeventos.payments.config;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.client.RestTemplate;
 
-import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.UUID;
 
@@ -15,6 +15,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class NotificationsClientTest {
 
@@ -23,13 +24,11 @@ class NotificationsClientTest {
     private RestTemplate mockRestTemplate;
 
     @BeforeEach
-    void setUp() throws Exception {
-        client = new NotificationsClient("http://localhost:18087", TEST_SECRET);
+    void setUp() {
         mockRestTemplate = mock(RestTemplate.class);
-
-        Field field = NotificationsClient.class.getDeclaredField("restTemplate");
-        field.setAccessible(true);
-        field.set(client, mockRestTemplate);
+        RestTemplateBuilder builder = mock(RestTemplateBuilder.class);
+        when(builder.build()).thenReturn(mockRestTemplate);
+        client = new NotificationsClient(builder, "http://localhost:18087", TEST_SECRET);
     }
 
     @Test

@@ -2,13 +2,13 @@ package co.empresa.vivaeventos.payments.config;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
-import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.UUID;
 
@@ -28,13 +28,11 @@ class OrdersClientTest {
     private RestTemplate mockRestTemplate;
 
     @BeforeEach
-    void setUp() throws Exception {
-        client = new OrdersClient("http://localhost:18082", TEST_SECRET);
+    void setUp() {
         mockRestTemplate = mock(RestTemplate.class);
-
-        Field field = OrdersClient.class.getDeclaredField("restTemplate");
-        field.setAccessible(true);
-        field.set(client, mockRestTemplate);
+        RestTemplateBuilder builder = mock(RestTemplateBuilder.class);
+        when(builder.build()).thenReturn(mockRestTemplate);
+        client = new OrdersClient(builder, "http://localhost:18082", TEST_SECRET);
     }
 
     @Test

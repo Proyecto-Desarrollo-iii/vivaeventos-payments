@@ -1,5 +1,6 @@
 package co.empresa.vivaeventos.payments.delivery.rest;
 
+import co.empresa.vivaeventos.payments.config.AuditEventClient;
 import co.empresa.vivaeventos.payments.config.JwtUtil;
 import co.empresa.vivaeventos.payments.config.StripeConfig;
 import co.empresa.vivaeventos.payments.domain.model.Dto.CreatePaymentRequest;
@@ -47,6 +48,9 @@ class PaymentControllerTest {
 
     @MockitoBean
     private JwtUtil jwtUtil;
+
+    @MockitoBean
+    private AuditEventClient auditEventClient;
 
     private UUID orderId;
     private UUID paymentId;
