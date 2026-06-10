@@ -52,34 +52,18 @@ jobs:
         run: mvn verify
         env:
           JWT_SECRET: dGhpc0lzQVZlcnlTZWNyZXRLZXlGb3JWYWlhRXZlbnRvc1RoYXROZWVkczUw
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/vivaeventos_payments
-
-      - name: Upload JaCoCo coverage report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-report
-          path: target/site/jacoco/
-          retention-days: 7
-
-      - name: Copy Maven dependencies for Sonar
-        run: mvn dependency:copy-dependencies -DoutputDirectory=target/dependency -Dmdep.useRepositoryLayout=false
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/vivaeventos-payments
 
       - name: SonarQube analysis
         continue-on-error: true
-        uses: SonarSource/sonarqube-scan-action@v8
+        run: mvn org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
+          -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+          -Dsonar.projectKey=Proyecto-Desarrollo-iii_vivaeventos-payments \
+          -Dsonar.organization=proyecto-desarrollo-iii \
+          -Dsonar.host.url=https://sonarcloud.io
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=Proyecto-Desarrollo-iii_vivaeventos-payments
-            -Dsonar.organization=proyecto-desarrollo-iii
-            -Dsonar.host.url=https://sonarcloud.io
-            -Dsonar.sources=src/main/java
-            -Dsonar.java.binaries=target/classes
-            -Dsonar.java.libraries=target/dependency/*.jar
-            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
-            -Dsonar.coverage.exclusions=**/model/Dto/*.java,**/repository/*.java,**/domain/service/I*.java
+          JWT_SECRET: dGhpc0lzQVZlcnlTZWNyZXRLZXlGb3JWYWlhRXZlbnRvc1RoYXROZWVkczUw
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/vivaeventos-payments
 
   docker-build-and-push:
     needs: build-and-test
