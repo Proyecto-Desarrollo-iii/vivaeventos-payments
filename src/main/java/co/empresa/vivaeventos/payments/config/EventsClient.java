@@ -10,6 +10,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -28,9 +29,10 @@ public class EventsClient {
     private final SecretKey signingKey;
 
     public EventsClient(
+            RestTemplateBuilder restTemplateBuilder,
             @Value("${services.events.url:http://localhost:8081}") String eventsBaseUrl,
             @Value("${jwt.secret}") String jwtSecret) {
-        this.restTemplate = new RestTemplate();
+        this.restTemplate = restTemplateBuilder.build();
         this.eventsBaseUrl = eventsBaseUrl;
         this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
     }
