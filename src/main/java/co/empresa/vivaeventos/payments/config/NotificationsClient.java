@@ -9,6 +9,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -27,9 +28,10 @@ public class NotificationsClient {
     private final SecretKey signingKey;
 
     public NotificationsClient(
+            RestTemplateBuilder restTemplateBuilder,
             @Value("${services.notifications.url:http://localhost:8087}") String notificationsBaseUrl,
             @Value("${jwt.secret}") String jwtSecret) {
-        this.restTemplate = new RestTemplate();
+        this.restTemplate = restTemplateBuilder.build();
         this.notificationsBaseUrl = notificationsBaseUrl;
         this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
     }

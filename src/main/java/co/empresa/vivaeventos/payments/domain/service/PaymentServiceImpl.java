@@ -25,6 +25,7 @@ import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentIntentRetrieveParams;
 import com.stripe.param.PaymentIntentUpdateParams;
 import com.stripe.param.RefundCreateParams;
+import io.micrometer.observation.annotation.Observed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -54,6 +55,7 @@ public class PaymentServiceImpl implements IPaymentService {
     private final AuditEventClient auditEventClient;
     private final ObjectMapper objectMapper;
 
+    @Observed(name = "payments.create_payment_intent", contextualName = "createPaymentIntent")
     @Override
     @Transactional
     public PaymentResponse createPaymentIntent(CreatePaymentRequest request, String idempotencyKey, String userId, String userEmail) {
@@ -171,6 +173,7 @@ public class PaymentServiceImpl implements IPaymentService {
                 .orElseThrow(() -> new IllegalArgumentException("Payment not found for order: " + orderId));
     }
 
+    @Observed(name = "payments.confirm_payment", contextualName = "confirmPayment")
     @Override
     @Transactional
     public PaymentResponse confirmPayment(String paymentIntentId) {
@@ -476,6 +479,7 @@ public class PaymentServiceImpl implements IPaymentService {
         }
     }
 
+    @Observed(name = "payments.handle_webhook", contextualName = "handleWebhook")
     @Override
     @Transactional
     public PaymentResponse handleWebhook(WebhookPayload payload) {

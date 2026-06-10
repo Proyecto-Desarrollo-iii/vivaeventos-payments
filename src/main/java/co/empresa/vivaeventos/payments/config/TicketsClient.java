@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -27,9 +28,10 @@ public class TicketsClient {
     private final SecretKey signingKey;
 
     public TicketsClient(
+            RestTemplateBuilder restTemplateBuilder,
             @Value("${services.tickets.url:http://localhost:8085}") String ticketsBaseUrl,
             @Value("${jwt.secret}") String jwtSecret) {
-        this.restTemplate = new RestTemplate();
+        this.restTemplate = restTemplateBuilder.build();
         this.ticketsBaseUrl = ticketsBaseUrl;
         this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
     }

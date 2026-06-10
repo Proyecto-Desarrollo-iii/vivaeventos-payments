@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -32,7 +33,7 @@ class AuditEventClientTest {
     @BeforeEach
     void setUp() {
         String jwtSecret = "dGhpc0lzQVZlcnlTZWNyZXRLZXlGb3JWYWlhRXZlbnRvc1RoYXROZWVkczUw";
-        auditEventClient = new AuditEventClient("http://audit:8089", jwtSecret);
+        auditEventClient = new AuditEventClient(new RestTemplateBuilder(), "http://audit:8089", jwtSecret);
         ReflectionTestUtils.setField(auditEventClient, "restTemplate", restTemplate);
     }
 
