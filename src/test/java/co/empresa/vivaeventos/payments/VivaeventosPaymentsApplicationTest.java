@@ -56,6 +56,8 @@ class VivaeventosPaymentsApplicationTest {
     @MockBean
     private TicketsClient ticketsClient;
 
+    //Hola
+
     @Test
     void contextLoads() {
         assertThat(application).isNotNull();
