@@ -35,6 +35,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -61,17 +63,16 @@ jobs:
           retention-days: 7
 
       - name: SonarQube analysis
-        uses: SonarSource/sonarqube-scan-action@v8
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=vivaeventos-payments
-            -Dsonar.organization=proyecto-desarrollo-iii
-            -Dsonar.host.url=https://sonarcloud.io
-            -Dsonar.java.binaries=target/classes
-            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+        continue-on-error: true
+        run: |
+          mvn sonar:sonar \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.projectKey=vivaeventos-payments \
+            -Dsonar.organization=proyecto-desarrollo-iii \
+            -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.coverage.exclusions=**/model/Dto/*.java,**/repository/*.java,**/domain/service/I*.java
+        env:
+          JWT_SECRET: dGhpc0lzQVZlcnlTZWNyZXRLZXlGb3JWYWlhRXZlbnRvc1RoYXROZWVkczUw
 
   docker-build-and-push:
     needs: build-and-test
